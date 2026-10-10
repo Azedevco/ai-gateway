@@ -8,6 +8,7 @@ use serde::Deserialize;
 use super::Admin;
 use crate::AppState;
 use crate::error::WebResult;
+use crate::models::kind::Kind;
 use crate::models::model::{self, ModelRow};
 use crate::models::provider::{self, Provider, ProviderForm, ProviderRow};
 use crate::services::probes::ProbeView;
@@ -49,7 +50,7 @@ struct ProviderView {
 async fn index(admin: Admin, state: web::Data<AppState>) -> WebResult<HttpResponse> {
     views::render(ProvidersView {
         page: Page::new(&admin.0, "Providers", Nav::Providers),
-        providers: provider::list(&state.db).await?,
+        providers: provider::list(&state.db, Kind::Chat).await?,
     })
 }
 
@@ -61,7 +62,7 @@ async fn create(
 ) -> WebResult<HttpResponse> {
     if let Err(msg) = form.validate() {
         flash(&admin.0, false, msg);
-        return Ok(views::redirect("/providers"));
+        return Ok(views::redirect(form.kind.home()));
     }
     match provider::create(&state.db, &form).await {
         Ok(id) => {
@@ -74,7 +75,7 @@ async fn create(
         }
         Err(e) if provider::is_duplicate(&e) => {
             flash(&admin.0, false, "A provider with that name already exists.");
-            Ok(views::redirect("/providers"))
+            Ok(views::redirect(form.kind.home()))
         }
         Err(e) => Err(e.into()),
     }
@@ -89,7 +90,11 @@ async fn show(
     let provider = provider::get(&state.db, *id).await?;
     let models = model::list_for_provider(&state.db, provider.id).await?;
     views::render(ProviderView {
-        page: Page::new(&admin.0, provider.name.clone(), Nav::Providers),
+        page: Page::new(
+            &admin.0,
+            provider.name.clone(),
+            Nav::for_kind(provider.kind),
+        ),
         probes: state.probes.view(models.iter().map(|m| m.id)),
         models,
         provider,
@@ -124,13 +129,14 @@ async fn destroy(
     state: web::Data<AppState>,
     id: web::Path<i64>,
 ) -> WebResult<HttpResponse> {
+    let kind = provider::get(&state.db, *id).await?.kind;
     provider::delete(&state.db, *id).await?;
     flash(
         &admin.0,
         true,
         "Provider deleted, with its models and combo entries.",
     );
-    Ok(views::redirect("/providers"))
+    Ok(views::redirect(kind.home()))
 }
 
 #[derive(Deserialize)]

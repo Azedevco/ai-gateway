@@ -12,8 +12,12 @@ use serde_json::Value;
 use sqlx::SqlitePool;
 
 use crate::error::ApiError;
+use crate::models::kind::Kind;
 use crate::models::request_log::{self, Attempt, RequestRecord, Usage};
 use crate::services::router::Target;
+
+/// Path of the TypeSafe System One endpoint, relative to a provider's base URL.
+pub const DECISION_ENDPOINT: &str = "systemone";
 
 /// Upstream error bodies are kept short in the log.
 const MAX_ERROR_CHARS: usize = 300;
@@ -226,13 +230,17 @@ impl Upstream {
             ));
         }
 
-        // A 2xx without a usable answer (HTML error page, empty choices) is a failure too.
+        // A 2xx without a usable answer (HTML error page, empty choices/answers) is a failure too.
         let json: Value = serde_json::from_slice(&bytes)
             .map_err(|_| Failure::new(Some(status), "response is not JSON".into()))?;
         if endpoint.ends_with("completions")
             && json["choices"].as_array().is_none_or(|c| c.is_empty())
         {
             return Err(Failure::new(Some(status), "response has no choices".into()));
+        }
+        if endpoint == DECISION_ENDPOINT && json["answers"].as_object().is_none_or(|a| a.is_empty())
+        {
+            return Err(Failure::new(Some(status), "response has no answers".into()));
         }
         Ok(Answer {
             status,
@@ -246,24 +254,32 @@ impl Upstream {
     /// nothing is recorded in the request log.
     pub async fn probe(&self, target: &Target) -> Probe {
         let started = Instant::now();
-        let body = serde_json::json!({
-            "model": target.model_name,
-            "messages": [{"role": "user", "content": "Reply with the single word: OK"}],
-            "max_tokens": 16,
-        });
-        let result = self.call_json(target, "chat/completions", body).await;
+        let (endpoint, body) = match target.kind {
+            Kind::Chat => (
+                "chat/completions",
+                serde_json::json!({
+                    "model": target.model_name,
+                    "messages": [{"role": "user", "content": "Reply with the single word: OK"}],
+                    "max_tokens": 16,
+                }),
+            ),
+            Kind::Decision => (
+                DECISION_ENDPOINT,
+                serde_json::json!({
+                    "model": target.model_name,
+                    "state": {"check": "gateway health check"},
+                    "questions": {"ok": {"type": "noul", "instructions": "Is 2 + 2 equal to 4?"}},
+                }),
+            ),
+        };
+        let result = self.call_json(target, endpoint, body).await;
         let latency_ms = started.elapsed().as_millis() as i64;
         match result {
             Ok(answer) => {
-                let message = &answer.json["choices"][0]["message"];
-                // Reasoning models may spend the budget on `reasoning_content` and leave `content` empty.
-                let reply = [&message["content"], &message["reasoning_content"]]
-                    .into_iter()
-                    .filter_map(Value::as_str)
-                    .map(str::trim)
-                    .find(|t| !t.is_empty())
-                    .map(|t| truncate(t).chars().take(80).collect())
-                    .unwrap_or_else(|| "(empty reply)".into());
+                let reply = match target.kind {
+                    Kind::Chat => chat_reply(&answer.json),
+                    Kind::Decision => decision_reply(&answer.json),
+                };
                 Probe {
                     ok: true,
                     status: Some(answer.status.as_u16()),
@@ -363,10 +379,31 @@ impl Upstream {
 fn upstream_body(body: &Value, target: &Target, stream: bool) -> Value {
     let mut body = body.clone();
     body["model"] = Value::String(target.model_name.clone());
-    if stream && body.get("stream_options").is_none() {
+    if stream && target.kind == Kind::Chat && body.get("stream_options").is_none() {
         body["stream_options"] = serde_json::json!({ "include_usage": true });
     }
     body
+}
+
+/// Start of a chat reply. Reasoning models may spend the budget on `reasoning_content` and
+/// leave `content` empty.
+fn chat_reply(json: &Value) -> String {
+    let message = &json["choices"][0]["message"];
+    [&message["content"], &message["reasoning_content"]]
+        .into_iter()
+        .filter_map(Value::as_str)
+        .map(str::trim)
+        .find(|t| !t.is_empty())
+        .map(|t| truncate(t).chars().take(80).collect())
+        .unwrap_or_else(|| "(empty reply)".into())
+}
+
+/// The health-check Noul answer, e.g. "P(yes) 0.99".
+fn decision_reply(json: &Value) -> String {
+    match json["answers"]["ok"]["noul"].as_f64() {
+        Some(p) => format!("P(yes) {p:.2}"),
+        None => "answered".into(),
+    }
 }
 
 fn gateway_headers(
@@ -523,6 +560,7 @@ mod tests {
             base_url: "https://api.example.com/v1".into(),
             api_key: String::new(),
             timeout_secs: 30,
+            kind: Kind::Chat,
         }
     }
 
@@ -535,6 +573,16 @@ mod tests {
 
         let out = upstream_body(&body, &target(), false);
         assert!(out.get("stream_options").is_none());
+
+        let decision = Target {
+            kind: Kind::Decision,
+            ..target()
+        };
+        let out = upstream_body(&body, &decision, true);
+        assert!(
+            out.get("stream_options").is_none(),
+            "System One has no streaming"
+        );
     }
 
     #[test]

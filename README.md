@@ -20,6 +20,10 @@ templates and SQLite. One binary, no external services.
 - **Priority fallback (combos)**: a combo is a model name such as `priority` that maps to an
   ordered list of models. Connection errors, timeouts, non-2xx answers and 2xx answers without
   `choices` move on to the next model.
+- **Decision models** (TypeSafe System One / Jev-style): a separate kind of provider for models
+  that answer typed Choice / Score / Noul questions. `POST /v1/systemone` gets the same combos,
+  fallback (e.g. free tiers first, paid last), stats and test buttons as chat. Point the TypeSafe
+  SDK at the gateway with `TYPESAFE_BASE_URL`.
 - **Streaming** (SSE) is passed through unchanged. Fallback applies until the upstream sends its
   status line; token usage is read from the final chunk (`stream_options.include_usage` is added
   for you).
@@ -64,9 +68,19 @@ client = OpenAI(base_url="http://127.0.0.1:8090/v1", api_key="agw_...")
 client.chat.completions.create(model="priority", messages=[{"role": "user", "content": "Hello"}])
 ```
 
+Decision models work the same way through the TypeSafe SDK:
+
+```sh
+TYPESAFE_BASE_URL=http://127.0.0.1:8090   # the SDK calls /v1/systemone
+TYPESAFE_API_KEY=agw_...
+TYPESAFE_DEFAULT_MODEL=jev                # a decision combo or model
+```
+
 Responses carry `X-Gateway-Provider`, `X-Gateway-Model` and `X-Gateway-Attempts` headers.
 
 ## How `model` is resolved
+
+Chat endpoints only see chat providers and combos; `/v1/systemone` only sees decision ones.
 
 1. A **combo** with that name: its enabled models, top to bottom.
 2. A **model id** (e.g. `deepseek-chat`): every enabled provider that has it, oldest provider first.

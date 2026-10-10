@@ -4,6 +4,7 @@ pub mod api;
 mod auth;
 mod combos;
 mod dashboard;
+mod decision;
 mod keys;
 mod providers;
 mod requests;
@@ -22,6 +23,7 @@ pub fn web_routes(cfg: &mut web::ServiceConfig) {
         .configure(requests::routes)
         .configure(providers::routes)
         .configure(combos::routes)
+        .configure(decision::routes)
         .configure(keys::routes);
 }
 

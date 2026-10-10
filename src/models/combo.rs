@@ -1,11 +1,14 @@
 use serde::Deserialize;
 use sqlx::{FromRow, SqlitePool};
 
+use super::kind::Kind;
+
 #[derive(Debug, FromRow)]
 pub struct Combo {
     pub id: i64,
     pub name: String,
     pub description: String,
+    pub kind: Kind,
 }
 
 #[derive(Debug, FromRow)]
@@ -31,6 +34,9 @@ pub struct ComboForm {
     pub name: String,
     #[serde(default)]
     pub description: String,
+    /// Set on create; a combo's kind never changes.
+    #[serde(default)]
+    pub kind: Kind,
 }
 
 impl ComboForm {
@@ -53,7 +59,7 @@ pub enum Direction {
     Down,
 }
 
-pub async fn list(db: &SqlitePool) -> sqlx::Result<Vec<ComboRow>> {
+pub async fn list(db: &SqlitePool, kind: Kind) -> sqlx::Result<Vec<ComboRow>> {
     sqlx::query_as(
         "SELECT c.id, c.name, c.description,
                 (SELECT COUNT(*) FROM combo_entries e WHERE e.combo_id = c.id) AS entry_count,
@@ -61,14 +67,15 @@ pub async fn list(db: &SqlitePool) -> sqlx::Result<Vec<ComboRow>> {
                    JOIN models m ON m.id = e.model_id JOIN providers p ON p.id = m.provider_id
                   WHERE e.combo_id = c.id AND m.enabled AND p.enabled
                   ORDER BY e.position LIMIT 1) AS \"primary\"
-         FROM combos c ORDER BY c.name",
+         FROM combos c WHERE c.kind = ? ORDER BY c.name",
     )
+    .bind(kind)
     .fetch_all(db)
     .await
 }
 
 pub async fn get(db: &SqlitePool, id: i64) -> sqlx::Result<Combo> {
-    sqlx::query_as("SELECT id, name, description FROM combos WHERE id = ?")
+    sqlx::query_as("SELECT id, name, description, kind FROM combos WHERE id = ?")
         .bind(id)
         .fetch_one(db)
         .await
@@ -89,9 +96,10 @@ pub async fn entries(db: &SqlitePool, combo_id: i64) -> sqlx::Result<Vec<EntryRo
 
 pub async fn create(db: &SqlitePool, form: &ComboForm) -> sqlx::Result<i64> {
     Ok(
-        sqlx::query("INSERT INTO combos (name, description) VALUES (?, ?)")
+        sqlx::query("INSERT INTO combos (name, description, kind) VALUES (?, ?, ?)")
             .bind(form.name.trim())
             .bind(form.description.trim())
+            .bind(form.kind)
             .execute(db)
             .await?
             .last_insert_rowid(),
@@ -116,15 +124,18 @@ pub async fn delete(db: &SqlitePool, id: i64) -> sqlx::Result<()> {
     Ok(())
 }
 
-/// Appends a model to the end of the chain (no-op if it is already there).
+/// Appends a model to the end of the chain. No-op if it is already there or if the model is
+/// of a different kind than the combo.
 pub async fn add_entry(db: &SqlitePool, combo_id: i64, model_id: i64) -> sqlx::Result<()> {
     sqlx::query(
         "INSERT OR IGNORE INTO combo_entries (combo_id, model_id, position)
-         VALUES (?, ?, COALESCE((SELECT MAX(position) + 1 FROM combo_entries WHERE combo_id = ?), 0))",
+         SELECT c.id, m.id,
+                COALESCE((SELECT MAX(position) + 1 FROM combo_entries WHERE combo_id = c.id), 0)
+         FROM combos c, models m JOIN providers p ON p.id = m.provider_id
+         WHERE c.id = ? AND m.id = ? AND p.kind = c.kind",
     )
     .bind(combo_id)
     .bind(model_id)
-    .bind(combo_id)
     .execute(db)
     .await?;
     Ok(())

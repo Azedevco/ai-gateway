@@ -2,6 +2,7 @@
 
 pub mod api_key;
 pub mod combo;
+pub mod kind;
 pub mod model;
 pub mod provider;
 pub mod request_log;

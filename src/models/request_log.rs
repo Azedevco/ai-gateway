@@ -20,11 +20,13 @@ pub struct Usage {
 }
 
 impl Usage {
-    /// Reads an OpenAI `usage` object; missing fields count as zero.
+    /// Reads a `usage` object: OpenAI's `prompt_tokens`/`completion_tokens` or System One's
+    /// `input_tokens`/`output_tokens`. Missing fields count as zero.
     pub fn from_json(v: &serde_json::Value) -> Option<Self> {
         let u = v.get("usage")?.as_object()?;
         let n = |k: &str| u.get(k).and_then(|x| x.as_i64()).unwrap_or(0);
-        let (prompt, completion) = (n("prompt_tokens"), n("completion_tokens"));
+        let prompt = n("prompt_tokens").max(n("input_tokens"));
+        let completion = n("completion_tokens").max(n("output_tokens"));
         let total = match n("total_tokens") {
             0 => prompt + completion,
             t => t,

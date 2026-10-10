@@ -2,8 +2,9 @@
 {% block content %}
 <header class="head">
   <div>
-    <a class="back" href="/providers">← Providers</a>
+    <a class="back" href="{{ provider.kind.home() }}">← {{ provider.kind.home_label() }}</a>
     <h1>{{ provider.name }}</h1>
+    {% if provider.kind.is_decision() %}<span class="badge">decision · /systemone</span>{% endif %}
     <p class="mono small mute">{{ provider.base_url }}</p>
   </div>
 </header>
@@ -45,7 +46,7 @@
   </div>
   {% endif %}
   <form class="inline-form" method="post" action="/providers/{{ provider.id }}/models">
-    <label class="field grow"><span>Add model ids (one per line)</span><textarea name="names" rows="2" placeholder="deepseek-chat"></textarea></label>
+    <label class="field grow"><span>Add model ids (one per line)</span><textarea name="names" rows="2" placeholder="{% if provider.kind.is_decision() %}jev-latest{% else %}deepseek-chat{% endif %}"></textarea></label>
     <button class="btn" type="submit">Add</button>
   </form>
 </section>

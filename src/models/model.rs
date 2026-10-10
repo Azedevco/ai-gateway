@@ -1,5 +1,7 @@
 use sqlx::{FromRow, SqlitePool};
 
+use super::kind::Kind;
+
 /// A model together with its provider, as shown in lists and combo pickers.
 #[derive(Debug, Clone, FromRow)]
 pub struct ModelRow {
@@ -28,8 +30,9 @@ macro_rules! select_models {
     };
 }
 
-pub async fn list_all(db: &SqlitePool) -> sqlx::Result<Vec<ModelRow>> {
-    sqlx::query_as(select_models!("ORDER BY p.name, m.name"))
+pub async fn list_by_kind(db: &SqlitePool, kind: Kind) -> sqlx::Result<Vec<ModelRow>> {
+    sqlx::query_as(select_models!("WHERE p.kind = ? ORDER BY p.name, m.name"))
+        .bind(kind)
         .fetch_all(db)
         .await
 }

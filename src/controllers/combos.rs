@@ -8,6 +8,7 @@ use super::Admin;
 use crate::AppState;
 use crate::error::WebResult;
 use crate::models::combo::{self, Combo, ComboForm, ComboRow, Direction, EntryRow};
+use crate::models::kind::Kind;
 use crate::models::model::{self, ModelRow};
 use crate::models::provider;
 use crate::services::probes::ProbeView;
@@ -49,7 +50,7 @@ struct ComboView {
 async fn index(admin: Admin, state: web::Data<AppState>) -> WebResult<HttpResponse> {
     views::render(CombosView {
         page: Page::new(&admin.0, "Combos", Nav::Combos),
-        combos: combo::list(&state.db).await?,
+        combos: combo::list(&state.db, Kind::Chat).await?,
     })
 }
 
@@ -61,7 +62,7 @@ async fn create(
 ) -> WebResult<HttpResponse> {
     if let Err(msg) = form.validate() {
         flash(&admin.0, false, msg);
-        return Ok(views::redirect("/combos"));
+        return Ok(views::redirect(form.kind.combos_home()));
     }
     match combo::create(&state.db, &form).await {
         Ok(id) => {
@@ -74,7 +75,7 @@ async fn create(
         }
         Err(e) if provider::is_duplicate(&e) => {
             flash(&admin.0, false, "A combo with that name already exists.");
-            Ok(views::redirect("/combos"))
+            Ok(views::redirect(form.kind.combos_home()))
         }
         Err(e) => Err(e.into()),
     }
@@ -88,13 +89,17 @@ async fn show(
 ) -> WebResult<HttpResponse> {
     let combo = combo::get(&state.db, *id).await?;
     let entries = combo::entries(&state.db, combo.id).await?;
-    let available = model::list_all(&state.db)
+    let available = model::list_by_kind(&state.db, combo.kind)
         .await?
         .into_iter()
         .filter(|m| !entries.iter().any(|e| e.model_id == m.id))
         .collect();
     views::render(ComboView {
-        page: Page::new(&admin.0, combo.name.clone(), Nav::Combos),
+        page: Page::new(
+            &admin.0,
+            combo.name.clone(),
+            Nav::for_kind_combos(combo.kind),
+        ),
         probes: state.probes.view(entries.iter().map(|e| e.model_id)),
         combo,
         entries,
@@ -130,9 +135,10 @@ async fn destroy(
     state: web::Data<AppState>,
     id: web::Path<i64>,
 ) -> WebResult<HttpResponse> {
+    let kind = combo::get(&state.db, *id).await?.kind;
     combo::delete(&state.db, *id).await?;
     flash(&admin.0, true, "Combo deleted.");
-    Ok(views::redirect("/combos"))
+    Ok(views::redirect(kind.combos_home()))
 }
 
 #[derive(Deserialize)]

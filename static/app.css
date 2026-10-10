@@ -142,6 +142,8 @@ th.num { text-align: right; }
 .attempts li + li { margin-top: 6px; }
 .err-text { color: var(--crit); font: 12px/1.5 var(--font-mono); word-break: break-word; opacity: 0.9; }
 
+pre.code { margin: 0; padding: 12px 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; font: 13px/1.6 var(--font-mono); color: var(--soft); overflow-x: auto; }
+
 /* Test results */
 .probe { margin-top: 4px; font: 12px/1.4 var(--font-mono); word-break: break-word; }
 .probe-ok { color: var(--live); }

@@ -4,6 +4,7 @@ use std::time::Duration;
 
 use actix_web::{App, HttpResponse, HttpServer, test, web};
 use ai_gateway::config::Config;
+use ai_gateway::models::kind::Kind;
 use ai_gateway::models::{api_key, combo, model, provider, stats};
 use ai_gateway::services::upstream::Upstream;
 use ai_gateway::{AppState, configure, db};
@@ -31,6 +32,27 @@ async fn mock_chat(body: web::Json<Value>) -> HttpResponse {
     }
 }
 
+/// System One mock: `jev-down` is out of free quota (429), `jev-ok` answers.
+async fn mock_systemone(body: web::Json<Value>) -> HttpResponse {
+    match body["model"].as_str() {
+        Some("jev-ok") => {
+            let key = body["questions"]
+                .as_object()
+                .unwrap()
+                .keys()
+                .next()
+                .unwrap()
+                .clone();
+            HttpResponse::Ok().json(json!({
+                "model": "jev-ok",
+                "usage": {"input_tokens": 40, "output_tokens": 0},
+                "answers": {key: {"type": "noul", "noul": 0.97}}
+            }))
+        }
+        _ => HttpResponse::TooManyRequests().body("free tier exhausted"),
+    }
+}
+
 async fn mock_models() -> HttpResponse {
     HttpResponse::Ok().json(json!({"data": [{"id": "good"}, {"id": "broken"}]}))
 }
@@ -41,6 +63,7 @@ fn start_upstream() -> String {
         App::new()
             .route("/v1/chat/completions", web::post().to(mock_chat))
             .route("/v1/models", web::get().to(mock_models))
+            .route("/v1/systemone", web::post().to(mock_systemone))
     })
     .workers(1)
     .bind("127.0.0.1:0")
@@ -80,6 +103,7 @@ async fn fixture(name: &str) -> Fixture {
             api_key: String::new(),
             timeout_secs: Some(10),
             enabled: Some("1".into()),
+            kind: Kind::Chat,
         },
     )
     .await
@@ -95,6 +119,7 @@ async fn fixture(name: &str) -> Fixture {
         &combo::ComboForm {
             name: "priority".into(),
             description: String::new(),
+            kind: Kind::Chat,
         },
     )
     .await
@@ -111,6 +136,7 @@ async fn fixture(name: &str) -> Fixture {
         &combo::ComboForm {
             name: "doomed".into(),
             description: String::new(),
+            kind: Kind::Chat,
         },
     )
     .await
@@ -302,6 +328,7 @@ async fn admin_pages_require_login_and_render() {
         .into_owned();
 
     for page in [
+        "/decision",
         "/",
         "/?range=7d",
         "/?range=30d",
@@ -399,4 +426,102 @@ async fn test_buttons_report_per_model_and_combo_results() {
             .requests,
         0
     );
+}
+
+/// Decision provider `jevs` (same mock host) with `jev-down` and `jev-ok`; combo `jev` tries them
+/// in that order. Returns the combo id.
+async fn add_decision_setup(f: &Fixture) -> i64 {
+    let db = &f.state.db;
+    let chat_base = provider::get(db, 1).await.unwrap().base_url;
+    let provider_id = provider::create(
+        db,
+        &provider::ProviderForm {
+            name: "jevs".into(),
+            base_url: format!("{chat_base}/systemone"), // pasted endpoint URL is trimmed
+            api_key: String::new(),
+            timeout_secs: Some(10),
+            enabled: Some("1".into()),
+            kind: Kind::Decision,
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        provider::get(db, provider_id).await.unwrap().base_url,
+        chat_base
+    );
+    model::add_many(db, provider_id, &["jev-down".into(), "jev-ok".into()])
+        .await
+        .unwrap();
+    let models = model::list_for_provider(db, provider_id).await.unwrap();
+    let id_of = |n: &str| models.iter().find(|m| m.name == n).unwrap().id;
+    let combo_id = combo::create(
+        db,
+        &combo::ComboForm {
+            name: "jev".into(),
+            description: String::new(),
+            kind: Kind::Decision,
+        },
+    )
+    .await
+    .unwrap();
+    combo::add_entry(db, combo_id, id_of("jev-down"))
+        .await
+        .unwrap();
+    combo::add_entry(db, combo_id, id_of("jev-ok"))
+        .await
+        .unwrap();
+    // A chat model cannot join a decision combo.
+    combo::add_entry(db, combo_id, 2).await.unwrap();
+    assert_eq!(combo::entries(db, combo_id).await.unwrap().len(), 2);
+    combo_id
+}
+
+#[actix_web::test]
+async fn decision_combo_falls_back_and_counts_tokens() {
+    let f = fixture("decision").await;
+    add_decision_setup(&f).await;
+    let app = test::init_service(App::new().configure(configure(f.state.clone()))).await;
+    let call = |model: &str, uri: &str| {
+        test::TestRequest::post()
+            .uri(uri)
+            .insert_header(("Authorization", format!("Bearer {}", f.key)))
+            .set_json(json!({
+                "model": model,
+                "state": {"cv": "Python developer"},
+                "questions": {"is_dev": {"type": "noul", "instructions": "Is this a developer?"}}
+            }))
+            .to_request()
+    };
+
+    let resp = test::call_service(&app, call("jev", "/v1/systemone")).await;
+    assert_eq!(resp.status(), 200);
+    assert_eq!(resp.headers().get("X-Gateway-Model").unwrap(), "jev-ok");
+    assert_eq!(resp.headers().get("X-Gateway-Attempts").unwrap(), "2");
+    let body: Value = test::read_body_json(resp).await;
+    assert_eq!(body["answers"]["is_dev"]["noul"], 0.97);
+
+    // Kinds do not mix: chat names are unknown to /systemone and the other way round.
+    let resp = test::call_service(&app, call("priority", "/v1/systemone")).await;
+    assert_eq!(resp.status(), 404);
+    let resp = test::call_service(&app, call("jev", "/v1/chat/completions")).await;
+    assert_eq!(resp.status(), 404);
+
+    settle().await;
+    let totals = stats::totals(&f.state.db, stats::Range::Day).await.unwrap();
+    assert_eq!((totals.requests, totals.ok, totals.fallbacks), (1, 1, 1));
+    assert_eq!((totals.prompt_tokens, totals.total_tokens), (40, 40));
+}
+
+#[actix_web::test]
+async fn decision_probe_uses_systemone() {
+    let f = fixture("decision-probe").await;
+    let combo_id = add_decision_setup(&f).await;
+    let targets = ai_gateway::services::router::targets_for_combo(&f.state.db, combo_id)
+        .await
+        .unwrap();
+    let down = f.state.upstream.probe(&targets[0]).await;
+    let ok = f.state.upstream.probe(&targets[1]).await;
+    assert!(!down.ok && down.status == Some(429) && down.detail.contains("free tier exhausted"));
+    assert!(ok.ok && ok.detail == "P(yes) 0.97", "{}", ok.detail);
 }

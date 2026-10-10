@@ -1,6 +1,8 @@
 use serde::Deserialize;
 use sqlx::{FromRow, SqlitePool};
 
+use super::kind::Kind;
+
 #[derive(Debug, Clone, FromRow)]
 pub struct Provider {
     pub id: i64,
@@ -9,6 +11,7 @@ pub struct Provider {
     pub api_key: String,
     pub enabled: bool,
     pub timeout_secs: i64,
+    pub kind: Kind,
 }
 
 impl Provider {
@@ -36,6 +39,9 @@ pub struct ProviderRow {
 pub struct ProviderForm {
     pub name: String,
     pub base_url: String,
+    /// Set on create; a provider's kind never changes.
+    #[serde(default)]
+    pub kind: Kind,
     /// Empty on edit means "keep the current key".
     #[serde(default)]
     pub api_key: String,
@@ -56,9 +62,11 @@ impl ProviderForm {
     }
 
     fn base_url(&self) -> String {
-        // Accept a pasted ".../chat/completions" URL and keep the API root.
+        // Accept a pasted endpoint URL (".../chat/completions", ".../systemone") and keep the API root.
         let url = self.base_url.trim().trim_end_matches('/');
-        url.strip_suffix("/chat/completions")
+        ["/chat/completions", "/systemone"]
+            .iter()
+            .find_map(|suffix| url.strip_suffix(suffix))
             .unwrap_or(url)
             .to_string()
     }
@@ -68,19 +76,21 @@ impl ProviderForm {
     }
 }
 
-pub async fn list(db: &SqlitePool) -> sqlx::Result<Vec<ProviderRow>> {
+pub async fn list(db: &SqlitePool, kind: Kind) -> sqlx::Result<Vec<ProviderRow>> {
     sqlx::query_as(
         "SELECT p.id, p.name, p.base_url, p.enabled, COUNT(m.id) AS model_count
          FROM providers p LEFT JOIN models m ON m.provider_id = p.id
+         WHERE p.kind = ?
          GROUP BY p.id ORDER BY p.name",
     )
+    .bind(kind)
     .fetch_all(db)
     .await
 }
 
 pub async fn get(db: &SqlitePool, id: i64) -> sqlx::Result<Provider> {
     sqlx::query_as(
-        "SELECT id, name, base_url, api_key, enabled, timeout_secs FROM providers WHERE id = ?",
+        "SELECT id, name, base_url, api_key, enabled, timeout_secs, kind FROM providers WHERE id = ?",
     )
     .bind(id)
     .fetch_one(db)
@@ -89,13 +99,14 @@ pub async fn get(db: &SqlitePool, id: i64) -> sqlx::Result<Provider> {
 
 pub async fn create(db: &SqlitePool, form: &ProviderForm) -> sqlx::Result<i64> {
     let id = sqlx::query(
-        "INSERT INTO providers (name, base_url, api_key, timeout_secs, enabled) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO providers (name, base_url, api_key, timeout_secs, enabled, kind) VALUES (?, ?, ?, ?, ?, ?)",
     )
     .bind(form.name.trim())
     .bind(form.base_url())
     .bind(form.api_key.trim())
     .bind(form.timeout())
     .bind(form.enabled.is_some())
+    .bind(form.kind)
     .execute(db)
     .await?
     .last_insert_rowid();

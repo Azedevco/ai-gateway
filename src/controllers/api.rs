@@ -1,4 +1,4 @@
-//! OpenAI-compatible API used by clients.
+//! Client API: OpenAI-compatible chat endpoints and the TypeSafe System One endpoint.
 
 use actix_web::{HttpRequest, HttpResponse, get, web};
 use serde_json::{Value, json};
@@ -6,21 +6,23 @@ use serde_json::{Value, json};
 use crate::AppState;
 use crate::error::{ApiError, ApiResult};
 use crate::models::api_key;
+use crate::models::kind::Kind;
 use crate::services::router::{self, Resolved};
-use crate::services::upstream::ProxyRequest;
+use crate::services::upstream::{DECISION_ENDPOINT, ProxyRequest};
 
 pub fn routes(cfg: &mut web::ServiceConfig) {
     cfg.service(health)
         .service(list_models)
-        .service(proxy("chat/completions"))
-        .service(proxy("completions"))
-        .service(proxy("embeddings"));
+        .service(proxy("chat/completions", Kind::Chat))
+        .service(proxy("completions", Kind::Chat))
+        .service(proxy("embeddings", Kind::Chat))
+        .service(proxy(DECISION_ENDPOINT, Kind::Decision));
 }
 
-fn proxy(endpoint: &'static str) -> actix_web::Resource {
+fn proxy(endpoint: &'static str, kind: Kind) -> actix_web::Resource {
     web::resource(format!("/v1/{endpoint}")).route(web::post().to(
         move |state: web::Data<AppState>, req: HttpRequest, body: web::Bytes| async move {
-            forward(state, req, body, endpoint).await
+            forward(state, req, body, endpoint, kind).await
         },
     ))
 }
@@ -51,6 +53,7 @@ async fn forward(
     req: HttpRequest,
     body: web::Bytes,
     endpoint: &str,
+    kind: Kind,
 ) -> ApiResult<HttpResponse> {
     let api_key_id = authenticate(&state, &req).await?;
 
@@ -63,7 +66,7 @@ async fn forward(
         .ok_or_else(|| ApiError::BadRequest("`model` is required".into()))?
         .to_string();
 
-    let targets = match router::resolve(&state.db, &model).await? {
+    let targets = match router::resolve(&state.db, &model, kind).await? {
         Resolved::Targets(t) => t,
         Resolved::EmptyCombo => {
             return Err(ApiError::NotFound(format!(
@@ -77,6 +80,12 @@ async fn forward(
         }
     };
 
+    let mut body = body;
+    if kind == Kind::Decision
+        && let Some(obj) = body.as_object_mut()
+    {
+        obj.remove("stream");
+    }
     let request = ProxyRequest {
         endpoint: endpoint.to_string(),
         body,
