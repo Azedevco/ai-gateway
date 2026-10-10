@@ -8,7 +8,6 @@ use askama::Template;
 
 use crate::error::WebResult;
 use crate::models::api_key::ApiKeyRow;
-use crate::models::kind::Kind;
 use crate::models::request_log::{AttemptRow, RequestRow};
 use crate::models::stats::{Bucket, KeyStat, ModelStat, RequestedStat, Totals};
 
@@ -20,24 +19,6 @@ pub enum Nav {
     Combos,
     Decision,
     Keys,
-}
-
-impl Nav {
-    /// Section a provider page belongs to.
-    pub fn for_kind(kind: Kind) -> Self {
-        match kind {
-            Kind::Chat => Nav::Providers,
-            Kind::Decision => Nav::Decision,
-        }
-    }
-
-    /// Section a combo page belongs to.
-    pub fn for_kind_combos(kind: Kind) -> Self {
-        match kind {
-            Kind::Chat => Nav::Combos,
-            Kind::Decision => Nav::Decision,
-        }
-    }
 }
 
 pub struct Flash {

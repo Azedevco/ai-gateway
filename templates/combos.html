@@ -14,11 +14,12 @@
   {% else %}
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Name</th><th>Tries first</th><th class="num">Models</th><th>Description</th></tr></thead>
+      <thead><tr><th>Name</th><th>Kind</th><th>Tries first</th><th class="num">Models</th><th>Description</th></tr></thead>
       <tbody>
         {% for c in combos %}
         <tr>
           <td><a class="strong mono" href="/combos/{{ c.id }}">{{ c.name }}</a></td>
+          <td>{% if c.kind.is_decision() %}<span class="badge badge-decision">Decision</span>{% else %}<span class="badge">Chat</span>{% endif %}</td>
           <td>{% if let Some(p) = c.primary %}{{ p }}{% else %}<span class="crit">no enabled model</span>{% endif %}</td>
           <td class="num">{{ c.entry_count }}</td>
           <td class="mute">{{ c.description }}</td>
@@ -35,6 +36,12 @@
   <form class="form-grid" method="post" action="/combos">
     <label class="field"><span>Name (sent as <code>model</code>)</span><input name="name" required placeholder="priority" pattern="\S+"></label>
     <label class="field"><span>Description</span><input name="description" placeholder="Fast and cheap first, strongest last"></label>
+    <fieldset class="field kind-pick">
+      <legend>Kind</legend>
+      {% for k in kinds %}
+      <label class="check"><input type="radio" name="kind" value="{{ k.as_str() }}" {% if loop.first %}checked{% endif %}> {{ k.label() }}{% if k.is_decision() %} — Jev-style models, called at <code>/v1/systemone</code>{% else %} — LLMs, called at <code>/v1/chat/completions</code>{% endif %}</label>
+      {% endfor %}
+    </fieldset>
     <div class="form-actions"><button class="btn btn-primary" type="submit">Create combo</button></div>
   </form>
 </section>

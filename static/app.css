@@ -133,6 +133,7 @@ th.num { text-align: right; }
 /* Badges */
 .badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font: 500 11px/1.6 var(--font-mono); border: 1px solid var(--line-strong); color: var(--mute); white-space: nowrap; }
 .badge-ok { color: var(--live); border-color: rgb(76 183 130 / 0.4); background: rgb(76 183 130 / 0.1); }
+.badge-decision { color: var(--series-ok); border-color: rgb(94 106 210 / 0.5); background: rgb(94 106 210 / 0.12); }
 .badge-err { color: var(--crit); border-color: rgb(235 87 87 / 0.4); background: rgb(235 87 87 / 0.1); }
 
 /* Attempts popover */
@@ -142,6 +143,11 @@ th.num { text-align: right; }
 .attempts li + li { margin-top: 6px; }
 .err-text { color: var(--crit); font: 12px/1.5 var(--font-mono); word-break: break-word; opacity: 0.9; }
 
+.kind-pick { grid-column: 1 / -1; border: 0; margin: 0; padding: 0; gap: 8px; }
+.kind-pick .check { align-items: center; flex-wrap: wrap; gap: 6px 8px; }
+.kind-pick legend { padding: 0; margin-bottom: 6px; }
+.import-form { display: flex; gap: 8px; }
+.import-form select { width: auto; }
 pre.code { margin: 0; padding: 12px 14px; background: var(--bg); border: 1px solid var(--line); border-radius: 8px; font: 13px/1.6 var(--font-mono); color: var(--soft); overflow-x: auto; }
 
 /* Test results */
@@ -171,7 +177,7 @@ input, select, textarea {
 }
 textarea { resize: vertical; font-family: var(--font-mono); font-size: 13px; }
 input:focus, select:focus, textarea:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgb(242 140 82 / 0.18); }
-input[type="checkbox"] { width: 16px; height: 16px; accent-color: var(--accent); }
+input[type="checkbox"], input[type="radio"] { width: 16px; height: 16px; flex: none; margin: 0; padding: 0; accent-color: var(--accent); }
 
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;

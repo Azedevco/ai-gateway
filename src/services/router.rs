@@ -29,14 +29,14 @@ macro_rules! select_targets {
     ($tail:literal) => {
         concat!(
             "SELECT m.id AS model_id, m.name AS model_name, p.name AS provider_name,
-                    p.base_url, p.api_key, p.timeout_secs, p.kind
+                    p.base_url, p.api_key, p.timeout_secs, m.kind
              FROM models m JOIN providers p ON p.id = m.provider_id ",
             $tail
         )
     };
 }
 
-/// Resolution order, among providers and combos of `kind` only:
+/// Resolution order, among combos and models of `kind` only:
 /// 1. a combo with that name: its models in position order (priority fallback);
 /// 2. a model id served by one or more providers: every enabled provider, oldest first;
 /// 3. `provider/model`: that one model.
@@ -56,7 +56,7 @@ pub async fn resolve(db: &SqlitePool, requested: &str, kind: Kind) -> sqlx::Resu
     }
 
     let targets: Vec<Target> = sqlx::query_as(select_targets!(
-        "WHERE m.name = ? AND p.kind = ? AND m.enabled AND p.enabled ORDER BY p.id"
+        "WHERE m.name = ? AND m.kind = ? AND m.enabled AND p.enabled ORDER BY p.id"
     ))
     .bind(requested)
     .bind(kind)
@@ -68,7 +68,7 @@ pub async fn resolve(db: &SqlitePool, requested: &str, kind: Kind) -> sqlx::Resu
 
     if let Some((provider, model)) = requested.split_once('/') {
         let targets: Vec<Target> = sqlx::query_as(select_targets!(
-            "WHERE p.name = ? AND m.name = ? AND p.kind = ? AND m.enabled AND p.enabled"
+            "WHERE p.name = ? AND m.name = ? AND m.kind = ? AND m.enabled AND p.enabled"
         ))
         .bind(provider)
         .bind(model)

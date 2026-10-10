@@ -1,7 +1,7 @@
 use serde::Deserialize;
 
-/// What an upstream speaks. Providers and combos have one kind; a combo only holds models of
-/// its own kind.
+/// What a model speaks. A provider can serve both kinds; a combo has one kind and only holds
+/// models of that kind.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, sqlx::Type)]
 #[serde(rename_all = "lowercase")]
 #[sqlx(type_name = "TEXT", rename_all = "lowercase")]
@@ -25,26 +25,12 @@ impl Kind {
         *self == Kind::Decision
     }
 
-    /// Admin page that lists providers and combos of this kind.
-    pub fn home(self) -> &'static str {
+    pub fn label(self) -> &'static str {
         match self {
-            Kind::Chat => "/providers",
-            Kind::Decision => "/decision",
+            Kind::Chat => "Chat",
+            Kind::Decision => "Decision",
         }
     }
 
-    /// Admin page that lists combos of this kind.
-    pub fn combos_home(self) -> &'static str {
-        match self {
-            Kind::Chat => "/combos",
-            Kind::Decision => "/decision",
-        }
-    }
-
-    pub fn home_label(self) -> &'static str {
-        match self {
-            Kind::Chat => "Providers",
-            Kind::Decision => "Decision models",
-        }
-    }
+    pub const ALL: [Kind; 2] = [Kind::Chat, Kind::Decision];
 }

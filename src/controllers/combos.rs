@@ -32,6 +32,7 @@ pub fn routes(cfg: &mut web::ServiceConfig) {
 struct CombosView {
     page: Page,
     combos: Vec<ComboRow>,
+    kinds: [Kind; 2],
 }
 
 #[derive(Template)]
@@ -50,7 +51,8 @@ struct ComboView {
 async fn index(admin: Admin, state: web::Data<AppState>) -> WebResult<HttpResponse> {
     views::render(CombosView {
         page: Page::new(&admin.0, "Combos", Nav::Combos),
-        combos: combo::list(&state.db, Kind::Chat).await?,
+        combos: combo::list(&state.db, None).await?,
+        kinds: Kind::ALL,
     })
 }
 
@@ -62,7 +64,7 @@ async fn create(
 ) -> WebResult<HttpResponse> {
     if let Err(msg) = form.validate() {
         flash(&admin.0, false, msg);
-        return Ok(views::redirect(form.kind.combos_home()));
+        return Ok(views::redirect("/combos"));
     }
     match combo::create(&state.db, &form).await {
         Ok(id) => {
@@ -75,7 +77,7 @@ async fn create(
         }
         Err(e) if provider::is_duplicate(&e) => {
             flash(&admin.0, false, "A combo with that name already exists.");
-            Ok(views::redirect(form.kind.combos_home()))
+            Ok(views::redirect("/combos"))
         }
         Err(e) => Err(e.into()),
     }
@@ -95,11 +97,7 @@ async fn show(
         .filter(|m| !entries.iter().any(|e| e.model_id == m.id))
         .collect();
     views::render(ComboView {
-        page: Page::new(
-            &admin.0,
-            combo.name.clone(),
-            Nav::for_kind_combos(combo.kind),
-        ),
+        page: Page::new(&admin.0, combo.name.clone(), Nav::Combos),
         probes: state.probes.view(entries.iter().map(|e| e.model_id)),
         combo,
         entries,
@@ -135,10 +133,9 @@ async fn destroy(
     state: web::Data<AppState>,
     id: web::Path<i64>,
 ) -> WebResult<HttpResponse> {
-    let kind = combo::get(&state.db, *id).await?.kind;
     combo::delete(&state.db, *id).await?;
     flash(&admin.0, true, "Combo deleted.");
-    Ok(views::redirect(kind.combos_home()))
+    Ok(views::redirect("/combos"))
 }
 
 #[derive(Deserialize)]

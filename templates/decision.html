@@ -4,52 +4,55 @@
   <div>
     <div class="eyebrow">TypeSafe System One</div>
     <h1>Decision models</h1>
-    <p class="mute">Jev-style models that answer typed questions (Choice, Score, Noul) instead of writing text. Add every provider that offers them; combos fall back between them.</p>
+    <p class="mute">Jev-style models that answer typed questions (Choice, Score, Noul) instead of writing text. Any provider can offer them next to its LLMs; add them here or on the provider page with kind “Decision”.</p>
   </div>
 </header>
 
 <section class="card">
   <div class="card-head">
-    <h2>Providers</h2>
+    <h2>Models</h2>
     <p class="mute">Called at <code>{base_url}/systemone</code>.</p>
   </div>
-  {% if providers.is_empty() %}
-    <p class="empty">No decision providers yet. Add the first one below.</p>
+  {% if models.is_empty() %}
+    <p class="empty">No decision models yet. Add the first one below.</p>
   {% else %}
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Name</th><th>Base URL</th><th class="num">Models</th><th>Status</th></tr></thead>
+      <thead><tr><th>Model id</th><th>Provider</th><th>Status</th></tr></thead>
       <tbody>
-        {% for p in providers %}
+        {% for m in models %}
         <tr>
-          <td><a class="strong" href="/providers/{{ p.id }}">{{ p.name }}</a></td>
-          <td class="mono small">{{ p.base_url }}</td>
-          <td class="num">{{ p.model_count }}</td>
-          <td>{% if p.enabled %}<span class="badge badge-ok">● Enabled</span>{% else %}<span class="badge">○ Disabled</span>{% endif %}</td>
+          <td class="mono">{{ m.name }}</td>
+          <td><a href="/providers/{{ m.provider_id }}#model-{{ m.id }}">{{ m.provider_name }}</a></td>
+          <td>{% if m.usable() %}<span class="badge badge-ok">● Enabled</span>{% else %}<span class="badge">○ Disabled</span>{% endif %}</td>
         </tr>
         {% endfor %}
       </tbody>
     </table>
   </div>
   {% endif %}
-  <form class="form-grid" method="post" action="/providers">
-    <input type="hidden" name="kind" value="decision">
-    <label class="field"><span>Name</span><input name="name" required placeholder="typesafe"></label>
-    <label class="field"><span>Base URL</span><input name="base_url" required placeholder="https://api.typesafe.ai/v1"></label>
-    <label class="field"><span>API key</span><input name="api_key" type="password" autocomplete="off"></label>
-    <label class="field"><span>Timeout (seconds)</span><input name="timeout_secs" type="number" min="5" max="1800" value="60"></label>
-    <label class="check"><input type="checkbox" name="enabled" value="1" checked> Enabled</label>
-    <div class="form-actions"><button class="btn btn-primary" type="submit">Add decision provider</button></div>
+  {% if providers.is_empty() %}
+    <p class="mute small">Add a <a href="/providers">provider</a> first (name, base URL, key); then add its decision models here.</p>
+  {% else %}
+  <form class="inline-form" method="post" action="/decision/models">
+    <label class="field"><span>Provider</span>
+      <select name="provider_id">
+        {% for p in providers %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field grow"><span>Decision model ids (one per line)</span><textarea name="names" rows="1" placeholder="jev-latest" required></textarea></label>
+    <button class="btn btn-primary" type="submit">Add decision model</button>
   </form>
+  {% endif %}
 </section>
 
 <section class="card">
   <div class="card-head">
-    <h2>Combos</h2>
-    <p class="mute">Sent as <code>model</code> in System One requests. Models are tried top to bottom.</p>
+    <h2>Decision combos</h2>
+    <a class="btn" href="/combos">New combo</a>
   </div>
   {% if combos.is_empty() %}
-    <p class="empty">No decision combos yet, e.g. <code>jev</code>: free tiers first, paid last.</p>
+    <p class="empty">No decision combos yet. On <a href="/combos">Combos</a>, create one with kind “Decision”, e.g. <code>jev</code>: free tiers first, paid last.</p>
   {% else %}
   <div class="table-wrap">
     <table>
@@ -67,12 +70,6 @@
     </table>
   </div>
   {% endif %}
-  <form class="form-grid" method="post" action="/combos">
-    <input type="hidden" name="kind" value="decision">
-    <label class="field"><span>Name (sent as <code>model</code>)</span><input name="name" required placeholder="jev" pattern="\S+"></label>
-    <label class="field"><span>Description</span><input name="description" placeholder="Free tiers first, paid last"></label>
-    <div class="form-actions"><button class="btn btn-primary" type="submit">Create decision combo</button></div>
-  </form>
 </section>
 
 <section class="card">

@@ -2,9 +2,8 @@
 {% block content %}
 <header class="head">
   <div>
-    <a class="back" href="{{ provider.kind.home() }}">← {{ provider.kind.home_label() }}</a>
+    <a class="back" href="/providers">← Providers</a>
     <h1>{{ provider.name }}</h1>
-    {% if provider.kind.is_decision() %}<span class="badge">decision · /systemone</span>{% endif %}
     <p class="mono small mute">{{ provider.base_url }}</p>
   </div>
 </header>
@@ -18,7 +17,11 @@
         <button class="btn" type="submit">Test all</button>
       </form>
       {% endif %}
-      <form method="post" action="/providers/{{ provider.id }}/import">
+      <form class="import-form" method="post" action="/providers/{{ provider.id }}/import">
+        <select name="kind" aria-label="Import as">
+          <option value="chat">as chat</option>
+          <option value="decision">as decision</option>
+        </select>
         <button class="btn" type="submit">Import from /models</button>
       </form>
     </div>
@@ -28,14 +31,16 @@
   {% else %}
   <div class="table-wrap">
     <table>
-      <thead><tr><th>Model id</th><th>Status</th><th class="actions-col"></th></tr></thead>
+      <thead><tr><th>Model id</th><th>Kind</th><th>Status</th><th class="actions-col"></th></tr></thead>
       <tbody>
         {% for m in models %}
         <tr id="model-{{ m.id }}">
           <td><div class="mono">{{ m.name }}</div>{% if let Some(r) = probes.get(&m.id) %}<div class="probe {% if r.ok %}probe-ok{% else %}probe-err{% endif %}"><span aria-hidden="true">{% if r.ok %}✓{% else %}✕{% endif %}</span> {% if r.ok %}Works{% else %}Failed{% endif %} · {{ r.summary }} <span class="mute">· {{ r.age }}</span></div>{% endif %}</td>
+          <td>{% if m.kind.is_decision() %}<span class="badge badge-decision">Decision</span>{% else %}<span class="badge">Chat</span>{% endif %}</td>
           <td>{% if m.enabled %}<span class="badge badge-ok">● Enabled</span>{% else %}<span class="badge">○ Disabled</span>{% endif %}</td>
           <td class="actions">
             <form method="post" action="/models/{{ m.id }}/test" data-busy="Testing…"><button class="link-btn" type="submit">Test</button></form>
+            <form method="post" action="/models/{{ m.id }}/kind">{% if m.kind.is_decision() %}<input type="hidden" name="kind" value="chat"><button class="link-btn" type="submit">Make chat</button>{% else %}<input type="hidden" name="kind" value="decision"><button class="link-btn" type="submit">Make decision</button>{% endif %}</form>
             <form method="post" action="/models/{{ m.id }}/toggle"><button class="link-btn" type="submit">{% if m.enabled %}Disable{% else %}Enable{% endif %}</button></form>
             <form method="post" action="/models/{{ m.id }}/delete" onsubmit="return confirm('Remove this model? It is also removed from combos.')"><button class="link-btn danger" type="submit">Remove</button></form>
           </td>
@@ -46,7 +51,13 @@
   </div>
   {% endif %}
   <form class="inline-form" method="post" action="/providers/{{ provider.id }}/models">
-    <label class="field grow"><span>Add model ids (one per line)</span><textarea name="names" rows="2" placeholder="{% if provider.kind.is_decision() %}jev-latest{% else %}deepseek-chat{% endif %}"></textarea></label>
+    <label class="field grow"><span>Add model ids (one per line)</span><textarea name="names" rows="2" placeholder="deepseek-chat"></textarea></label>
+    <label class="field"><span>Kind</span>
+      <select name="kind">
+        <option value="chat">Chat (LLM)</option>
+        <option value="decision">Decision (Jev)</option>
+      </select>
+    </label>
     <button class="btn" type="submit">Add</button>
   </form>
 </section>

@@ -2,8 +2,9 @@
 {% block content %}
 <header class="head">
   <div>
-    <a class="back" href="{{ combo.kind.combos_home() }}">← {% if combo.kind.is_decision() %}Decision models{% else %}Combos{% endif %}</a>
+    <a class="back" href="/combos">← Combos</a>
     <h1 class="mono">{{ combo.name }}</h1>
+    {% if combo.kind.is_decision() %}<span class="badge badge-decision">Decision</span>{% else %}<span class="badge">Chat</span>{% endif %}
     {% if !combo.description.is_empty() %}<p class="mute">{{ combo.description }}</p>{% endif %}
   </div>
 </header>
@@ -47,7 +48,7 @@
   {% endif %}
 
   {% if available.is_empty() %}
-    <p class="mute small">Every model is already in this combo. Add models on a <a href="{{ combo.kind.home() }}">provider</a> page.</p>
+    <p class="mute small">No more {{ combo.kind.label()|lower }} models to add. Add one on a <a href="/providers">provider</a> page with kind “{{ combo.kind.label() }}”.</p>
   {% else %}
   <form class="inline-form" method="post" action="/combos/{{ combo.id }}/entries">
     <label class="field grow"><span>Add to the end</span>

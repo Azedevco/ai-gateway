@@ -20,8 +20,8 @@ templates and SQLite. One binary, no external services.
 - **Priority fallback (combos)**: a combo is a model name such as `priority` that maps to an
   ordered list of models. Connection errors, timeouts, non-2xx answers and 2xx answers without
   `choices` move on to the next model.
-- **Decision models** (TypeSafe System One / Jev-style): a separate kind of provider for models
-  that answer typed Choice / Score / Noul questions. `POST /v1/systemone` gets the same combos,
+- **Decision models** (TypeSafe System One / Jev-style): models that answer typed Choice /
+  Score / Noul questions. Each model has a kind (chat or decision), so one provider can serve both. `POST /v1/systemone` gets the same combos,
   fallback (e.g. free tiers first, paid last), stats and test buttons as chat. Point the TypeSafe
   SDK at the gateway with `TYPESAFE_BASE_URL`.
 - **Streaming** (SSE) is passed through unchanged. Fallback applies until the upstream sends its

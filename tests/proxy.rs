@@ -103,14 +103,18 @@ async fn fixture(name: &str) -> Fixture {
             api_key: String::new(),
             timeout_secs: Some(10),
             enabled: Some("1".into()),
-            kind: Kind::Chat,
         },
     )
     .await
     .unwrap();
-    model::add_many(&pool, provider_id, &["broken".into(), "good".into()])
-        .await
-        .unwrap();
+    model::add_many(
+        &pool,
+        provider_id,
+        &["broken".into(), "good".into()],
+        Kind::Chat,
+    )
+    .await
+    .unwrap();
     let models = model::list_for_provider(&pool, provider_id).await.unwrap();
     let id_of = |n: &str| models.iter().find(|m| m.name == n).unwrap().id;
 
@@ -428,32 +432,15 @@ async fn test_buttons_report_per_model_and_combo_results() {
     );
 }
 
-/// Decision provider `jevs` (same mock host) with `jev-down` and `jev-ok`; combo `jev` tries them
-/// in that order. Returns the combo id.
+/// The same `mock` provider also serves decision models `jev-down` and `jev-ok`; combo `jev`
+/// tries them in that order. Returns the combo id.
 async fn add_decision_setup(f: &Fixture) -> i64 {
     let db = &f.state.db;
-    let chat_base = provider::get(db, 1).await.unwrap().base_url;
-    let provider_id = provider::create(
-        db,
-        &provider::ProviderForm {
-            name: "jevs".into(),
-            base_url: format!("{chat_base}/systemone"), // pasted endpoint URL is trimmed
-            api_key: String::new(),
-            timeout_secs: Some(10),
-            enabled: Some("1".into()),
-            kind: Kind::Decision,
-        },
-    )
-    .await
-    .unwrap();
-    assert_eq!(
-        provider::get(db, provider_id).await.unwrap().base_url,
-        chat_base
-    );
-    model::add_many(db, provider_id, &["jev-down".into(), "jev-ok".into()])
+    model::add_many(db, 1, &["jev-down".into(), "jev-ok".into()], Kind::Decision)
         .await
         .unwrap();
-    let models = model::list_for_provider(db, provider_id).await.unwrap();
+    let models = model::list_by_kind(db, Kind::Decision).await.unwrap();
+    assert!(models.iter().all(|m| m.provider_name == "mock"));
     let id_of = |n: &str| models.iter().find(|m| m.name == n).unwrap().id;
     let combo_id = combo::create(
         db,
@@ -524,4 +511,29 @@ async fn decision_probe_uses_systemone() {
     let ok = f.state.upstream.probe(&targets[1]).await;
     assert!(!down.ok && down.status == Some(429) && down.detail.contains("free tier exhausted"));
     assert!(ok.ok && ok.detail == "P(yes) 0.97", "{}", ok.detail);
+}
+
+#[actix_web::test]
+async fn changing_a_model_kind_moves_it_between_endpoints() {
+    let f = fixture("set-kind").await;
+    let db = &f.state.db;
+    // `good` (id 2) is a chat model in the chat combo `priority`.
+    model::set_kind(db, 2, Kind::Decision).await.unwrap();
+    let priority = combo::entries(db, 1).await.unwrap();
+    assert!(
+        priority.iter().all(|e| e.model_name != "good"),
+        "removed from chat combos"
+    );
+    assert!(matches!(
+        ai_gateway::services::router::resolve(db, "good", Kind::Chat)
+            .await
+            .unwrap(),
+        ai_gateway::services::router::Resolved::NotFound
+    ));
+    assert!(matches!(
+        ai_gateway::services::router::resolve(db, "good", Kind::Decision)
+            .await
+            .unwrap(),
+        ai_gateway::services::router::Resolved::Targets(_)
+    ));
 }

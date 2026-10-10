@@ -24,6 +24,7 @@ pub fn routes(cfg: &mut web::ServiceConfig) {
         .service(add_models)
         .service(import_models)
         .service(toggle_model)
+        .service(set_model_kind)
         .service(delete_model)
         .service(test_model)
         .service(test_provider);
@@ -50,7 +51,7 @@ struct ProviderView {
 async fn index(admin: Admin, state: web::Data<AppState>) -> WebResult<HttpResponse> {
     views::render(ProvidersView {
         page: Page::new(&admin.0, "Providers", Nav::Providers),
-        providers: provider::list(&state.db, Kind::Chat).await?,
+        providers: provider::list(&state.db).await?,
     })
 }
 
@@ -62,7 +63,7 @@ async fn create(
 ) -> WebResult<HttpResponse> {
     if let Err(msg) = form.validate() {
         flash(&admin.0, false, msg);
-        return Ok(views::redirect(form.kind.home()));
+        return Ok(views::redirect("/providers"));
     }
     match provider::create(&state.db, &form).await {
         Ok(id) => {
@@ -75,7 +76,7 @@ async fn create(
         }
         Err(e) if provider::is_duplicate(&e) => {
             flash(&admin.0, false, "A provider with that name already exists.");
-            Ok(views::redirect(form.kind.home()))
+            Ok(views::redirect("/providers"))
         }
         Err(e) => Err(e.into()),
     }
@@ -90,11 +91,7 @@ async fn show(
     let provider = provider::get(&state.db, *id).await?;
     let models = model::list_for_provider(&state.db, provider.id).await?;
     views::render(ProviderView {
-        page: Page::new(
-            &admin.0,
-            provider.name.clone(),
-            Nav::for_kind(provider.kind),
-        ),
+        page: Page::new(&admin.0, provider.name.clone(), Nav::Providers),
         probes: state.probes.view(models.iter().map(|m| m.id)),
         models,
         provider,
@@ -129,20 +126,36 @@ async fn destroy(
     state: web::Data<AppState>,
     id: web::Path<i64>,
 ) -> WebResult<HttpResponse> {
-    let kind = provider::get(&state.db, *id).await?.kind;
     provider::delete(&state.db, *id).await?;
     flash(
         &admin.0,
         true,
         "Provider deleted, with its models and combo entries.",
     );
-    Ok(views::redirect(kind.home()))
+    Ok(views::redirect("/providers"))
 }
 
 #[derive(Deserialize)]
-struct ModelsForm {
+pub(super) struct ModelsForm {
     /// One model id per line (commas also work).
-    names: String,
+    pub names: String,
+    #[serde(default)]
+    pub kind: Kind,
+}
+
+impl ModelsForm {
+    pub fn names(&self) -> Vec<String> {
+        self.names
+            .split([',', '\n'])
+            .map(|s| s.trim().to_string())
+            .collect()
+    }
+}
+
+#[derive(Deserialize)]
+struct KindForm {
+    #[serde(default)]
+    kind: Kind,
 }
 
 #[post("/providers/{id}/models")]
@@ -152,13 +165,15 @@ async fn add_models(
     id: web::Path<i64>,
     form: web::Form<ModelsForm>,
 ) -> WebResult<HttpResponse> {
-    let names: Vec<String> = form
-        .names
-        .split([',', '\n'])
-        .map(|s| s.trim().to_string())
-        .collect();
-    let added = model::add_many(&state.db, *id, &names).await?;
-    flash(&admin.0, true, format!("{added} model(s) added."));
+    let added = model::add_many(&state.db, *id, &form.names(), form.kind).await?;
+    flash(
+        &admin.0,
+        true,
+        format!(
+            "{added} {} model(s) added.",
+            form.kind.label().to_lowercase()
+        ),
+    );
     Ok(views::redirect(&format!("/providers/{id}")))
 }
 
@@ -167,6 +182,7 @@ async fn import_models(
     admin: Admin,
     state: web::Data<AppState>,
     id: web::Path<i64>,
+    form: web::Form<KindForm>,
 ) -> WebResult<HttpResponse> {
     let provider = provider::get(&state.db, *id).await?;
     match state
@@ -175,16 +191,41 @@ async fn import_models(
         .await
     {
         Ok(names) => {
-            let added = model::add_many(&state.db, provider.id, &names).await?;
+            let added = model::add_many(&state.db, provider.id, &names, form.kind).await?;
             flash(
                 &admin.0,
                 true,
-                format!("Provider lists {} model(s); {added} new.", names.len()),
+                format!(
+                    "Provider lists {} model(s); {added} new, added as {}.",
+                    names.len(),
+                    form.kind.label().to_lowercase()
+                ),
             );
         }
         Err(e) => flash(&admin.0, false, format!("Could not list models: {e}")),
     }
     Ok(views::redirect(&format!("/providers/{id}")))
+}
+
+#[post("/models/{id}/kind")]
+async fn set_model_kind(
+    admin: Admin,
+    state: web::Data<AppState>,
+    id: web::Path<i64>,
+    form: web::Form<KindForm>,
+) -> WebResult<HttpResponse> {
+    let provider_id = model::set_kind(&state.db, *id, form.kind).await?;
+    flash(
+        &admin.0,
+        true,
+        format!(
+            "Model is now {}. It was removed from combos of the other kind.",
+            form.kind.label().to_lowercase()
+        ),
+    );
+    Ok(views::redirect(&format!(
+        "/providers/{provider_id}#model-{id}"
+    )))
 }
 
 #[post("/models/{id}/toggle")]

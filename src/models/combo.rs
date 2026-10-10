@@ -16,6 +16,7 @@ pub struct ComboRow {
     pub id: i64,
     pub name: String,
     pub description: String,
+    pub kind: Kind,
     pub entry_count: i64,
     /// First usable model in the chain, if any.
     pub primary: Option<String>,
@@ -59,15 +60,16 @@ pub enum Direction {
     Down,
 }
 
-pub async fn list(db: &SqlitePool, kind: Kind) -> sqlx::Result<Vec<ComboRow>> {
+/// Combos of one kind, or all of them.
+pub async fn list(db: &SqlitePool, kind: Option<Kind>) -> sqlx::Result<Vec<ComboRow>> {
     sqlx::query_as(
-        "SELECT c.id, c.name, c.description,
+        "SELECT c.id, c.name, c.description, c.kind,
                 (SELECT COUNT(*) FROM combo_entries e WHERE e.combo_id = c.id) AS entry_count,
                 (SELECT p.name || ' / ' || m.name FROM combo_entries e
                    JOIN models m ON m.id = e.model_id JOIN providers p ON p.id = m.provider_id
                   WHERE e.combo_id = c.id AND m.enabled AND p.enabled
                   ORDER BY e.position LIMIT 1) AS \"primary\"
-         FROM combos c WHERE c.kind = ? ORDER BY c.name",
+         FROM combos c WHERE ?1 IS NULL OR c.kind = ?1 ORDER BY c.kind, c.name",
     )
     .bind(kind)
     .fetch_all(db)
@@ -131,8 +133,8 @@ pub async fn add_entry(db: &SqlitePool, combo_id: i64, model_id: i64) -> sqlx::R
         "INSERT OR IGNORE INTO combo_entries (combo_id, model_id, position)
          SELECT c.id, m.id,
                 COALESCE((SELECT MAX(position) + 1 FROM combo_entries WHERE combo_id = c.id), 0)
-         FROM combos c, models m JOIN providers p ON p.id = m.provider_id
-         WHERE c.id = ? AND m.id = ? AND p.kind = c.kind",
+         FROM combos c, models m
+         WHERE c.id = ? AND m.id = ? AND m.kind = c.kind",
     )
     .bind(combo_id)
     .bind(model_id)
