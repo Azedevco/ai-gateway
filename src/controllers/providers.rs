@@ -1,5 +1,8 @@
+use std::collections::HashMap;
+
 use actix_web::{HttpResponse, get, post, web};
 use askama::Template;
+use futures_util::{StreamExt, stream};
 use serde::Deserialize;
 
 use super::Admin;
@@ -7,6 +10,8 @@ use crate::AppState;
 use crate::error::WebResult;
 use crate::models::model::{self, ModelRow};
 use crate::models::provider::{self, Provider, ProviderForm, ProviderRow};
+use crate::services::probes::ProbeView;
+use crate::services::router;
 use crate::views::{self, Nav, Page, flash};
 
 pub fn routes(cfg: &mut web::ServiceConfig) {
@@ -18,7 +23,9 @@ pub fn routes(cfg: &mut web::ServiceConfig) {
         .service(add_models)
         .service(import_models)
         .service(toggle_model)
-        .service(delete_model);
+        .service(delete_model)
+        .service(test_model)
+        .service(test_provider);
 }
 
 #[derive(Template)]
@@ -34,6 +41,8 @@ struct ProviderView {
     page: Page,
     provider: Provider,
     models: Vec<ModelRow>,
+    /// Latest test result per model id.
+    probes: HashMap<i64, ProbeView>,
 }
 
 #[get("/providers")]
@@ -78,9 +87,11 @@ async fn show(
     id: web::Path<i64>,
 ) -> WebResult<HttpResponse> {
     let provider = provider::get(&state.db, *id).await?;
+    let models = model::list_for_provider(&state.db, provider.id).await?;
     views::render(ProviderView {
         page: Page::new(&admin.0, provider.name.clone(), Nav::Providers),
-        models: model::list_for_provider(&state.db, provider.id).await?,
+        probes: state.probes.view(models.iter().map(|m| m.id)),
+        models,
         provider,
     })
 }
@@ -189,4 +200,63 @@ async fn delete_model(
     let provider_id = model::delete(&state.db, *id).await?;
     flash(&admin.0, true, "Model removed.");
     Ok(views::redirect(&format!("/providers/{provider_id}")))
+}
+
+/// How many models "Test all" checks at once.
+const TEST_CONCURRENCY: usize = 6;
+
+#[post("/models/{id}/test")]
+async fn test_model(
+    admin: Admin,
+    state: web::Data<AppState>,
+    id: web::Path<i64>,
+) -> WebResult<HttpResponse> {
+    let target = router::target_for_model(&state.db, *id).await?;
+    let probe = state.upstream.probe(&target).await;
+    let message = if probe.ok {
+        format!(
+            "{} answered in {}.",
+            target.model_name,
+            views::ms(probe.latency_ms as f64)
+        )
+    } else {
+        format!("{} failed: {}", target.model_name, probe.detail)
+    };
+    flash(&admin.0, probe.ok, message);
+    state.probes.store(target.model_id, probe);
+    let provider_id = model::provider_of(&state.db, *id).await?;
+    Ok(views::redirect(&format!(
+        "/providers/{provider_id}#model-{id}"
+    )))
+}
+
+#[post("/providers/{id}/test")]
+async fn test_provider(
+    admin: Admin,
+    state: web::Data<AppState>,
+    id: web::Path<i64>,
+) -> WebResult<HttpResponse> {
+    let targets = router::targets_for_provider(&state.db, *id).await?;
+    let total = targets.len();
+    let results: Vec<_> = stream::iter(targets)
+        .map(|t| {
+            let state = state.clone();
+            async move {
+                let probe = state.upstream.probe(&t).await;
+                (t.model_id, probe)
+            }
+        })
+        .buffer_unordered(TEST_CONCURRENCY)
+        .collect()
+        .await;
+    let passed = results.iter().filter(|(_, p)| p.ok).count();
+    for (model_id, probe) in results {
+        state.probes.store(model_id, probe);
+    }
+    flash(
+        &admin.0,
+        passed == total,
+        format!("{passed} of {total} model(s) answered."),
+    );
+    Ok(views::redirect(&format!("/providers/{id}")))
 }

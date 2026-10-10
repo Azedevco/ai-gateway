@@ -10,8 +10,15 @@
 
 <section class="card">
   <div class="card-head">
-    <h2>Fallback order</h2>
-    <p class="mute">Tried top to bottom. Disabled models are skipped.</p>
+    <div>
+      <h2>Fallback order</h2>
+      <p class="mute">Tried top to bottom. Disabled models are skipped.</p>
+    </div>
+    {% if !entries.is_empty() %}
+    <form method="post" action="/combos/{{ combo.id }}/test" data-busy="Testing…">
+      <button class="btn" type="submit">Test combo</button>
+    </form>
+    {% endif %}
   </div>
   {% if entries.is_empty() %}
     <p class="empty">Empty. Add models below; requests to <code>{{ combo.name }}</code> fail until then.</p>
@@ -23,6 +30,7 @@
       <div class="grow">
         <div class="strong mono">{{ e.model_name }}</div>
         <div class="mute small">{{ e.provider_name }}{% if !e.usable %} · disabled, skipped{% endif %}</div>
+        {% if let Some(r) = probes.get(&e.model_id) %}<div class="probe {% if r.ok %}probe-ok{% else %}probe-err{% endif %}"><span aria-hidden="true">{% if r.ok %}✓{% else %}✕{% endif %}</span> {% if r.ok %}Works{% else %}Failed{% endif %} · {{ r.summary }} <span class="mute">· {{ r.age }}</span></div>{% endif %}
       </div>
       <div class="actions">
         {% if !loop.first %}

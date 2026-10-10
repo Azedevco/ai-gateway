@@ -28,6 +28,9 @@ templates and SQLite. One binary, no external services.
 - **Request log** with every attempt, its status, latency and error.
 - **Client API keys**: one per app, stored as SHA-256 hashes, can be disabled at any time.
 - **Admin UI** to manage providers (with one-click model import from `/models`), combos and keys.
+- **Test buttons**: check one model, every model of a provider, or a whole combo (walked like a real
+  request, stopping at the first model that answers). Results show latency and the reply or error,
+  and are kept out of the statistics.
 
 ## Quick start
 

@@ -131,6 +131,7 @@ async fn fixture(name: &str) -> Fixture {
             retention_days: 0,
         },
         upstream: Upstream::new().unwrap(),
+        probes: Default::default(),
     });
     Fixture {
         state,
@@ -321,4 +322,81 @@ async fn admin_pages_require_login_and_render() {
         .await;
         assert_eq!(resp.status(), 200, "{page}");
     }
+}
+
+#[actix_web::test]
+async fn test_buttons_report_per_model_and_combo_results() {
+    let f = fixture("probe").await;
+    let app = test::init_service(App::new().configure(configure(f.state.clone()))).await;
+    let resp = test::call_service(
+        &app,
+        test::TestRequest::post()
+            .uri("/login")
+            .set_form([("password", "password123")])
+            .to_request(),
+    )
+    .await;
+    let mut cookie = resp
+        .response()
+        .cookies()
+        .find(|c| c.name() == "gateway_session")
+        .unwrap()
+        .into_owned();
+
+    // POST, follow the redirect with the refreshed session cookie, return the page HTML.
+    let mut post_then_get = async |post: &str, get: &str| {
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::post()
+                .uri(post)
+                .cookie(cookie.clone())
+                .to_request(),
+        )
+        .await;
+        assert_eq!(resp.status(), 303, "{post}");
+        if let Some(c) = resp
+            .response()
+            .cookies()
+            .find(|c| c.name() == "gateway_session")
+        {
+            cookie = c.into_owned();
+        }
+        let resp = test::call_service(
+            &app,
+            test::TestRequest::get()
+                .uri(get)
+                .cookie(cookie.clone())
+                .to_request(),
+        )
+        .await;
+        String::from_utf8(test::read_body(resp).await.to_vec()).unwrap()
+    };
+
+    // Model ids from the fixture: 1 = broken, 2 = good.
+    let html = post_then_get("/providers/1/test", "/providers/1").await;
+    assert!(html.contains("1 of 2 model(s) answered."), "{html}");
+    assert!(html.contains("Works · ") && html.contains("Hello"));
+    assert!(html.contains("Failed · 500 · boom"));
+
+    let html = post_then_get("/models/2/test", "/providers/1").await;
+    assert!(html.contains("good answered in"));
+
+    let html = post_then_get("/combos/1/test", "/combos/1").await;
+    assert!(
+        html.contains("works via fallback: mock / good answered on attempt 2"),
+        "{html}"
+    );
+
+    let html = post_then_get("/combos/2/test", "/combos/2").await;
+    assert!(html.contains("fails: all 1 model(s) failed"), "{html}");
+
+    // Tests are not traffic.
+    settle().await;
+    assert_eq!(
+        stats::totals(&f.state.db, stats::Range::Day)
+            .await
+            .unwrap()
+            .requests,
+        0
+    );
 }

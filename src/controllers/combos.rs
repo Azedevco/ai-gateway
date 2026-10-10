@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use actix_web::{HttpResponse, get, post, web};
 use askama::Template;
 use serde::Deserialize;
@@ -8,6 +10,8 @@ use crate::error::WebResult;
 use crate::models::combo::{self, Combo, ComboForm, ComboRow, Direction, EntryRow};
 use crate::models::model::{self, ModelRow};
 use crate::models::provider;
+use crate::services::probes::ProbeView;
+use crate::services::router;
 use crate::views::{self, Nav, Page, flash};
 
 pub fn routes(cfg: &mut web::ServiceConfig) {
@@ -18,7 +22,8 @@ pub fn routes(cfg: &mut web::ServiceConfig) {
         .service(destroy)
         .service(add_entry)
         .service(move_entry)
-        .service(remove_entry);
+        .service(remove_entry)
+        .service(test_combo);
 }
 
 #[derive(Template)]
@@ -36,6 +41,8 @@ struct ComboView {
     entries: Vec<EntryRow>,
     /// Models not yet in the chain.
     available: Vec<ModelRow>,
+    /// Latest test result per model id.
+    probes: HashMap<i64, ProbeView>,
 }
 
 #[get("/combos")]
@@ -88,6 +95,7 @@ async fn show(
         .collect();
     views::render(ComboView {
         page: Page::new(&admin.0, combo.name.clone(), Nav::Combos),
+        probes: state.probes.view(entries.iter().map(|e| e.model_id)),
         combo,
         entries,
         available,
@@ -168,5 +176,51 @@ async fn remove_entry(
 ) -> WebResult<HttpResponse> {
     let (id, model_id) = *path;
     combo::remove_entry(&state.db, id, model_id).await?;
+    Ok(views::redirect(&format!("/combos/{id}")))
+}
+
+/// Walks the chain like a client request would: stops at the first model that answers.
+#[post("/combos/{id}/test")]
+async fn test_combo(
+    admin: Admin,
+    state: web::Data<AppState>,
+    id: web::Path<i64>,
+) -> WebResult<HttpResponse> {
+    let combo = combo::get(&state.db, *id).await?;
+    let targets = router::targets_for_combo(&state.db, combo.id).await?;
+    let mut answered = None;
+    for (i, target) in targets.iter().enumerate() {
+        let probe = state.upstream.probe(target).await;
+        let ok = probe.ok;
+        let latency = probe.latency_ms;
+        state.probes.store(target.model_id, probe);
+        if ok {
+            answered = Some((i + 1, target, latency));
+            break;
+        }
+    }
+    let message = match answered {
+        Some((1, t, ms)) => format!(
+            "`{}` works: {} / {} answered first try in {}.",
+            combo.name,
+            t.provider_name,
+            t.model_name,
+            views::ms(ms as f64)
+        ),
+        Some((n, t, ms)) => format!(
+            "`{}` works via fallback: {} / {} answered on attempt {n} in {}. Earlier models failed, see below.",
+            combo.name,
+            t.provider_name,
+            t.model_name,
+            views::ms(ms as f64)
+        ),
+        None if targets.is_empty() => format!("`{}` has no enabled models.", combo.name),
+        None => format!(
+            "`{}` fails: all {} model(s) failed, see below.",
+            combo.name,
+            targets.len()
+        ),
+    };
+    flash(&admin.0, answered.is_some(), message);
     Ok(views::redirect(&format!("/combos/{id}")))
 }

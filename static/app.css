@@ -142,6 +142,14 @@ th.num { text-align: right; }
 .attempts li + li { margin-top: 6px; }
 .err-text { color: var(--crit); font: 12px/1.5 var(--font-mono); word-break: break-word; opacity: 0.9; }
 
+/* Test results */
+.probe { margin-top: 4px; font: 12px/1.4 var(--font-mono); word-break: break-word; }
+.probe-ok { color: var(--live); }
+.probe-err { color: var(--crit); }
+.head-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.head-actions form { margin: 0; }
+button:disabled { opacity: 0.6; cursor: progress; }
+
 /* Combo chain */
 .chain { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .chain-item { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--card-2); }

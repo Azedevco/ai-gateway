@@ -104,3 +104,30 @@ pub async fn public_model_ids(db: &SqlitePool) -> sqlx::Result<Vec<(String, Stri
     }
     Ok(ids)
 }
+
+/// One model as a target, whether or not it is enabled (for admin tests).
+pub async fn target_for_model(db: &SqlitePool, model_id: i64) -> sqlx::Result<Target> {
+    sqlx::query_as(select_targets!("WHERE m.id = ?"))
+        .bind(model_id)
+        .fetch_one(db)
+        .await
+}
+
+/// Every model of a provider as targets, enabled or not (for admin tests).
+pub async fn targets_for_provider(db: &SqlitePool, provider_id: i64) -> sqlx::Result<Vec<Target>> {
+    sqlx::query_as(select_targets!("WHERE p.id = ? ORDER BY m.name"))
+        .bind(provider_id)
+        .fetch_all(db)
+        .await
+}
+
+/// The combo's enabled models in fallback order, exactly as a client request would try them.
+pub async fn targets_for_combo(db: &SqlitePool, combo_id: i64) -> sqlx::Result<Vec<Target>> {
+    sqlx::query_as(select_targets!(
+        "JOIN combo_entries e ON e.model_id = m.id
+         WHERE e.combo_id = ? AND m.enabled AND p.enabled ORDER BY e.position"
+    ))
+    .bind(combo_id)
+    .fetch_all(db)
+    .await
+}

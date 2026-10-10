@@ -38,5 +38,14 @@
     {% block content %}{% endblock %}
   </main>
 </div>
+<script>
+  document.addEventListener("submit", (e) => {
+    const form = e.target.closest("form[data-busy]");
+    const button = form && form.querySelector("button[type=submit]");
+    if (!button) return;
+    button.disabled = true;
+    button.textContent = form.dataset.busy;
+  });
+</script>
 </body>
 </html>

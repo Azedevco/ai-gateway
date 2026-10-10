@@ -16,6 +16,7 @@ use actix_session::{SessionMiddleware, config::PersistentSession, storage::Cooki
 use actix_web::{cookie::Key, web};
 
 use crate::config::Config;
+use crate::services::probes::Probes;
 use crate::services::upstream::Upstream;
 
 /// Shared application state.
@@ -23,6 +24,8 @@ pub struct AppState {
     pub db: sqlx::SqlitePool,
     pub config: Config,
     pub upstream: Upstream,
+    /// Latest admin test result per model.
+    pub probes: Probes,
 }
 
 /// Registers every route. The admin UI is wrapped in the session middleware; the API is not.

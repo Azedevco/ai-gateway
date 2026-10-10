@@ -30,6 +30,33 @@ pub struct ProxyRequest {
     pub api_key_id: Option<i64>,
 }
 
+/// Result of a model test from the admin UI.
+pub struct Probe {
+    pub ok: bool,
+    pub status: Option<u16>,
+    pub latency_ms: i64,
+    /// Start of the reply, or the error.
+    pub detail: String,
+}
+
+struct Answer {
+    status: StatusCode,
+    content_type: Option<reqwest::header::HeaderValue>,
+    bytes: Bytes,
+    json: Value,
+}
+
+struct Failure {
+    status: Option<StatusCode>,
+    error: String,
+}
+
+impl Failure {
+    fn new(status: Option<StatusCode>, error: String) -> Self {
+        Self { status, error }
+    }
+}
+
 enum Outcome {
     Done(HttpResponse),
     /// Try the next target. `status` is the upstream HTTP status when there was one.
@@ -165,14 +192,14 @@ impl Upstream {
         rb
     }
 
-    async fn send_once(
+    /// One non-streaming call with the same success rules the proxy uses: a 2xx JSON answer,
+    /// and for completion endpoints at least one choice.
+    async fn call_json(
         &self,
         target: &Target,
         endpoint: &str,
         body: Value,
-        record: &mut RequestRecord,
-    ) -> Outcome {
-        let started = Instant::now();
+    ) -> Result<Answer, Failure> {
         let timeout = Duration::from_secs(target.timeout_secs as u64);
         let call = async {
             let resp = self.request(target, endpoint, body).send().await?;
@@ -182,25 +209,94 @@ impl Upstream {
             Ok::<_, reqwest::Error>((status, content_type, bytes))
         };
         let (status, content_type, bytes) = match tokio::time::timeout(timeout, call).await {
-            Err(_) => return retry(None, format!("timed out after {}s", target.timeout_secs)),
-            Ok(Err(e)) => return retry(e.status().map(to_actix_status), describe(&e)),
+            Err(_) => {
+                return Err(Failure::new(
+                    None,
+                    format!("timed out after {}s", target.timeout_secs),
+                ));
+            }
+            Ok(Err(e)) => return Err(Failure::new(e.status().map(to_actix_status), describe(&e))),
             Ok(Ok(parts)) => parts,
         };
         let status = to_actix_status(status);
         if !status.is_success() {
-            return retry(Some(status), truncate(&String::from_utf8_lossy(&bytes)));
+            return Err(Failure::new(
+                Some(status),
+                truncate(&String::from_utf8_lossy(&bytes)),
+            ));
         }
 
         // A 2xx without a usable answer (HTML error page, empty choices) is a failure too.
-        let json: Value = match serde_json::from_slice(&bytes) {
-            Ok(v) => v,
-            Err(_) => return retry(Some(status), "response is not JSON".into()),
-        };
+        let json: Value = serde_json::from_slice(&bytes)
+            .map_err(|_| Failure::new(Some(status), "response is not JSON".into()))?;
         if endpoint.ends_with("completions")
             && json["choices"].as_array().is_none_or(|c| c.is_empty())
         {
-            return retry(Some(status), "response has no choices".into());
+            return Err(Failure::new(Some(status), "response has no choices".into()));
         }
+        Ok(Answer {
+            status,
+            content_type,
+            bytes,
+            json,
+        })
+    }
+
+    /// Sends a tiny chat request straight to one model. Used by the admin "Test" buttons;
+    /// nothing is recorded in the request log.
+    pub async fn probe(&self, target: &Target) -> Probe {
+        let started = Instant::now();
+        let body = serde_json::json!({
+            "model": target.model_name,
+            "messages": [{"role": "user", "content": "Reply with the single word: OK"}],
+            "max_tokens": 16,
+        });
+        let result = self.call_json(target, "chat/completions", body).await;
+        let latency_ms = started.elapsed().as_millis() as i64;
+        match result {
+            Ok(answer) => {
+                let message = &answer.json["choices"][0]["message"];
+                // Reasoning models may spend the budget on `reasoning_content` and leave `content` empty.
+                let reply = [&message["content"], &message["reasoning_content"]]
+                    .into_iter()
+                    .filter_map(Value::as_str)
+                    .map(str::trim)
+                    .find(|t| !t.is_empty())
+                    .map(|t| truncate(t).chars().take(80).collect())
+                    .unwrap_or_else(|| "(empty reply)".into());
+                Probe {
+                    ok: true,
+                    status: Some(answer.status.as_u16()),
+                    latency_ms,
+                    detail: reply,
+                }
+            }
+            Err(f) => Probe {
+                ok: false,
+                status: f.status.map(|s| s.as_u16()),
+                latency_ms,
+                detail: f.error,
+            },
+        }
+    }
+
+    async fn send_once(
+        &self,
+        target: &Target,
+        endpoint: &str,
+        body: Value,
+        record: &mut RequestRecord,
+    ) -> Outcome {
+        let started = Instant::now();
+        let Answer {
+            status,
+            content_type,
+            bytes,
+            json,
+        } = match self.call_json(target, endpoint, body).await {
+            Ok(a) => a,
+            Err(f) => return retry(f.status, f.error),
+        };
 
         record.usage = Usage::from_json(&json).unwrap_or_default();
         record.http_status = status.as_u16();

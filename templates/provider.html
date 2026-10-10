@@ -11,9 +11,16 @@
 <section class="card">
   <div class="card-head">
     <h2>Models</h2>
-    <form method="post" action="/providers/{{ provider.id }}/import">
-      <button class="btn" type="submit">Import from /models</button>
-    </form>
+    <div class="head-actions">
+      {% if !models.is_empty() %}
+      <form method="post" action="/providers/{{ provider.id }}/test" data-busy="Testing…">
+        <button class="btn" type="submit">Test all</button>
+      </form>
+      {% endif %}
+      <form method="post" action="/providers/{{ provider.id }}/import">
+        <button class="btn" type="submit">Import from /models</button>
+      </form>
+    </div>
   </div>
   {% if models.is_empty() %}
     <p class="empty">No models yet. Import them from the provider or add ids by hand.</p>
@@ -23,10 +30,11 @@
       <thead><tr><th>Model id</th><th>Status</th><th class="actions-col"></th></tr></thead>
       <tbody>
         {% for m in models %}
-        <tr>
-          <td class="mono">{{ m.name }}</td>
+        <tr id="model-{{ m.id }}">
+          <td><div class="mono">{{ m.name }}</div>{% if let Some(r) = probes.get(&m.id) %}<div class="probe {% if r.ok %}probe-ok{% else %}probe-err{% endif %}"><span aria-hidden="true">{% if r.ok %}✓{% else %}✕{% endif %}</span> {% if r.ok %}Works{% else %}Failed{% endif %} · {{ r.summary }} <span class="mute">· {{ r.age }}</span></div>{% endif %}</td>
           <td>{% if m.enabled %}<span class="badge badge-ok">● Enabled</span>{% else %}<span class="badge">○ Disabled</span>{% endif %}</td>
           <td class="actions">
+            <form method="post" action="/models/{{ m.id }}/test" data-busy="Testing…"><button class="link-btn" type="submit">Test</button></form>
             <form method="post" action="/models/{{ m.id }}/toggle"><button class="link-btn" type="submit">{% if m.enabled %}Disable{% else %}Enable{% endif %}</button></form>
             <form method="post" action="/models/{{ m.id }}/delete" onsubmit="return confirm('Remove this model? It is also removed from combos.')"><button class="link-btn danger" type="submit">Remove</button></form>
           </td>

@@ -55,6 +55,14 @@ pub async fn add_many(db: &SqlitePool, provider_id: i64, names: &[String]) -> sq
     Ok(added)
 }
 
+pub async fn provider_of(db: &SqlitePool, id: i64) -> sqlx::Result<i64> {
+    let row: (i64,) = sqlx::query_as("SELECT provider_id FROM models WHERE id = ?")
+        .bind(id)
+        .fetch_one(db)
+        .await?;
+    Ok(row.0)
+}
+
 pub async fn toggle(db: &SqlitePool, id: i64) -> sqlx::Result<i64> {
     let provider_id: (i64,) = sqlx::query_as(
         "UPDATE models SET enabled = NOT enabled WHERE id = ? RETURNING provider_id",

@@ -25,6 +25,7 @@ async fn main() -> Result<()> {
         db: pool,
         config,
         upstream: Upstream::new()?,
+        probes: Default::default(),
     });
 
     tracing::info!(%bind, "ai-gateway listening");
