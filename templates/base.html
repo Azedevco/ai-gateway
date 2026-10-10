@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ page.title }} · AI Gateway</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/app.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%2308090A'/%3E%3Cpath d='M9 22 16 9l7 13' stroke='%23F28C52' stroke-width='2.5' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <a class="brand" href="/">
+      <span class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32" width="22" height="22"><path d="M9 22 16 9l7 13" stroke="currentColor" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </span>
+      <span>AI Gateway</span>
+    </a>
+    <nav class="nav" aria-label="Main">
+      <a href="/" {% if page.is(Nav::Dashboard) %}aria-current="page"{% endif %}>Dashboard</a>
+      <a href="/requests" {% if page.is(Nav::Requests) %}aria-current="page"{% endif %}>Requests</a>
+      <a href="/providers" {% if page.is(Nav::Providers) %}aria-current="page"{% endif %}>Providers</a>
+      <a href="/combos" {% if page.is(Nav::Combos) %}aria-current="page"{% endif %}>Combos</a>
+      <a href="/keys" {% if page.is(Nav::Keys) %}aria-current="page"{% endif %}>API keys</a>
+    </nav>
+    <form method="post" action="/logout" class="side-foot">
+      <button class="link-btn" type="submit">Sign out</button>
+    </form>
+  </aside>
+
+  <main class="main">
+    {% if let Some(f) = page.flash %}
+      <div class="flash {% if f.ok %}flash-ok{% else %}flash-err{% endif %}" role="status">{{ f.text }}</div>
+    {% endif %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+</body>
+</html>

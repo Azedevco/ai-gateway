@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="head">
+  <div>
+    <div class="eyebrow">Upstreams</div>
+    <h1>Providers</h1>
+    <p class="mute">Any OpenAI-compatible API: OpenRouter, DeepSeek, Groq, vLLM, Ollama…</p>
+  </div>
+</header>
+
+<section class="card">
+  {% if providers.is_empty() %}
+    <p class="empty">No providers yet. Add the first one below.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Name</th><th>Base URL</th><th class="num">Models</th><th>Status</th></tr></thead>
+      <tbody>
+        {% for p in providers %}
+        <tr>
+          <td><a class="strong" href="/providers/{{ p.id }}">{{ p.name }}</a></td>
+          <td class="mono small">{{ p.base_url }}</td>
+          <td class="num">{{ p.model_count }}</td>
+          <td>{% if p.enabled %}<span class="badge badge-ok">● Enabled</span>{% else %}<span class="badge">○ Disabled</span>{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>Add provider</h2></div>
+  <form class="form-grid" method="post" action="/providers">
+    <label class="field"><span>Name</span><input name="name" required placeholder="deepseek"></label>
+    <label class="field"><span>Base URL</span><input name="base_url" required placeholder="https://api.deepseek.com/v1"></label>
+    <label class="field"><span>API key</span><input name="api_key" type="password" autocomplete="off" placeholder="sk-…"></label>
+    <label class="field"><span>Timeout (seconds)</span><input name="timeout_secs" type="number" min="5" max="1800" value="120"></label>
+    <label class="check"><input type="checkbox" name="enabled" value="1" checked> Enabled</label>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Add provider</button></div>
+  </form>
+</section>
+{% endblock %}

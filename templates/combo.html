@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="head">
+  <div>
+    <a class="back" href="/combos">← Combos</a>
+    <h1 class="mono">{{ combo.name }}</h1>
+    {% if !combo.description.is_empty() %}<p class="mute">{{ combo.description }}</p>{% endif %}
+  </div>
+</header>
+
+<section class="card">
+  <div class="card-head">
+    <h2>Fallback order</h2>
+    <p class="mute">Tried top to bottom. Disabled models are skipped.</p>
+  </div>
+  {% if entries.is_empty() %}
+    <p class="empty">Empty. Add models below; requests to <code>{{ combo.name }}</code> fail until then.</p>
+  {% else %}
+  <ol class="chain">
+    {% for e in entries %}
+    <li class="chain-item {% if !e.usable %}is-off{% endif %}">
+      <span class="chain-pos mono">{{ loop.index }}</span>
+      <div class="grow">
+        <div class="strong mono">{{ e.model_name }}</div>
+        <div class="mute small">{{ e.provider_name }}{% if !e.usable %} · disabled, skipped{% endif %}</div>
+      </div>
+      <div class="actions">
+        {% if !loop.first %}
+        <form method="post" action="/combos/{{ combo.id }}/entries/{{ e.model_id }}/move"><input type="hidden" name="dir" value="up"><button class="icon-btn" type="submit" aria-label="Move {{ e.model_name }} up">↑</button></form>
+        {% endif %}
+        {% if !loop.last %}
+        <form method="post" action="/combos/{{ combo.id }}/entries/{{ e.model_id }}/move"><input type="hidden" name="dir" value="down"><button class="icon-btn" type="submit" aria-label="Move {{ e.model_name }} down">↓</button></form>
+        {% endif %}
+        <form method="post" action="/combos/{{ combo.id }}/entries/{{ e.model_id }}/delete"><button class="link-btn danger" type="submit">Remove</button></form>
+      </div>
+    </li>
+    {% endfor %}
+  </ol>
+  {% endif %}
+
+  {% if available.is_empty() %}
+    <p class="mute small">Every model is already in this combo. Add models on a <a href="/providers">provider</a> page.</p>
+  {% else %}
+  <form class="inline-form" method="post" action="/combos/{{ combo.id }}/entries">
+    <label class="field grow"><span>Add to the end</span>
+      <select name="model_id">
+        {% for m in available %}
+        <option value="{{ m.id }}">{{ m.provider_name }} / {{ m.name }}{% if !m.usable() %} (disabled){% endif %}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="btn" type="submit">Add</button>
+  </form>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>Settings</h2></div>
+  <form class="form-grid" method="post" action="/combos/{{ combo.id }}">
+    <label class="field"><span>Name</span><input name="name" required value="{{ combo.name }}" pattern="\S+"></label>
+    <label class="field"><span>Description</span><input name="description" value="{{ combo.description }}"></label>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Save</button></div>
+  </form>
+</section>
+
+<section class="card danger-zone">
+  <div class="card-head"><h2>Delete combo</h2></div>
+  <form method="post" action="/combos/{{ combo.id }}/delete" onsubmit="return confirm('Delete this combo? Clients calling it will get 404.')">
+    <button class="btn btn-danger" type="submit">Delete {{ combo.name }}</button>
+  </form>
+</section>
+{% endblock %}

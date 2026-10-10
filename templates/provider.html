@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="head">
+  <div>
+    <a class="back" href="/providers">← Providers</a>
+    <h1>{{ provider.name }}</h1>
+    <p class="mono small mute">{{ provider.base_url }}</p>
+  </div>
+</header>
+
+<section class="card">
+  <div class="card-head">
+    <h2>Models</h2>
+    <form method="post" action="/providers/{{ provider.id }}/import">
+      <button class="btn" type="submit">Import from /models</button>
+    </form>
+  </div>
+  {% if models.is_empty() %}
+    <p class="empty">No models yet. Import them from the provider or add ids by hand.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Model id</th><th>Status</th><th class="actions-col"></th></tr></thead>
+      <tbody>
+        {% for m in models %}
+        <tr>
+          <td class="mono">{{ m.name }}</td>
+          <td>{% if m.enabled %}<span class="badge badge-ok">● Enabled</span>{% else %}<span class="badge">○ Disabled</span>{% endif %}</td>
+          <td class="actions">
+            <form method="post" action="/models/{{ m.id }}/toggle"><button class="link-btn" type="submit">{% if m.enabled %}Disable{% else %}Enable{% endif %}</button></form>
+            <form method="post" action="/models/{{ m.id }}/delete" onsubmit="return confirm('Remove this model? It is also removed from combos.')"><button class="link-btn danger" type="submit">Remove</button></form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+  <form class="inline-form" method="post" action="/providers/{{ provider.id }}/models">
+    <label class="field grow"><span>Add model ids (one per line)</span><textarea name="names" rows="2" placeholder="deepseek-chat"></textarea></label>
+    <button class="btn" type="submit">Add</button>
+  </form>
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>Settings</h2></div>
+  <form class="form-grid" method="post" action="/providers/{{ provider.id }}">
+    <label class="field"><span>Name</span><input name="name" required value="{{ provider.name }}"></label>
+    <label class="field"><span>Base URL</span><input name="base_url" required value="{{ provider.base_url }}"></label>
+    <label class="field"><span>API key <span class="mute">(current {{ provider.masked_key() }}; leave empty to keep)</span></span><input name="api_key" type="password" autocomplete="off"></label>
+    <label class="field"><span>Timeout (seconds)</span><input name="timeout_secs" type="number" min="5" max="1800" value="{{ provider.timeout_secs }}"></label>
+    <label class="check"><input type="checkbox" name="enabled" value="1" {% if provider.enabled %}checked{% endif %}> Enabled</label>
+    <div class="form-actions"><button class="btn btn-primary" type="submit">Save</button></div>
+  </form>
+</section>
+
+<section class="card danger-zone">
+  <div class="card-head"><h2>Delete provider</h2></div>
+  <p class="mute">Removes the provider, its models and their combo entries. Request history is kept.</p>
+  <form method="post" action="/providers/{{ provider.id }}/delete" onsubmit="return confirm('Delete this provider, its models and combo entries?')">
+    <button class="btn btn-danger" type="submit">Delete {{ provider.name }}</button>
+  </form>
+</section>
+{% endblock %}

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="head">
+  <div>
+    <div class="eyebrow">Access</div>
+    <h1>API keys</h1>
+    <p class="mute">Clients send a key as <code>Authorization: Bearer agw_…</code>.</p>
+  </div>
+</header>
+
+{% if let Some(k) = new_key %}
+<section class="card new-key" role="status">
+  <div class="card-head"><h2>New key — copy it now</h2></div>
+  <p class="mute">It is shown only once. Only a hash is stored.</p>
+  <div class="copy-row">
+    <input class="mono" id="new-key" value="{{ k }}" readonly onclick="this.select()">
+    <button class="btn" type="button" onclick="navigator.clipboard.writeText(document.getElementById('new-key').value).then(() => this.textContent = 'Copied')">Copy</button>
+  </div>
+</section>
+{% endif %}
+
+<section class="card">
+  {% if keys.is_empty() %}
+    <p class="empty">No keys yet. Create one per app so usage shows up separately.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Name</th><th>Key</th><th>Created (UTC)</th><th>Last used (UTC)</th><th>Status</th><th class="actions-col"></th></tr></thead>
+      <tbody>
+        {% for k in keys %}
+        <tr>
+          <td class="strong">{{ k.name }}</td>
+          <td class="mono">{{ k.key_prefix }}…</td>
+          <td class="mono small">{{ k.created_s() }}</td>
+          <td class="mono small">{{ k.last_used_s() }}</td>
+          <td>{% if k.enabled %}<span class="badge badge-ok">● Active</span>{% else %}<span class="badge">○ Disabled</span>{% endif %}</td>
+          <td class="actions">
+            <form method="post" action="/keys/{{ k.id }}/toggle"><button class="link-btn" type="submit">{% if k.enabled %}Disable{% else %}Enable{% endif %}</button></form>
+            <form method="post" action="/keys/{{ k.id }}/delete" onsubmit="return confirm('Delete this key? Clients using it are rejected immediately.')"><button class="link-btn danger" type="submit">Delete</button></form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% endif %}
+</section>
+
+<section class="card">
+  <div class="card-head"><h2>New key</h2></div>
+  <form class="inline-form" method="post" action="/keys">
+    <label class="field grow"><span>Name</span><input name="name" required placeholder="talentai-backend"></label>
+    <button class="btn btn-primary" type="submit">Create key</button>
+  </form>
+</section>
+{% endblock %}

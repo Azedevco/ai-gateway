@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="head">
+  <div>
+    <div class="eyebrow">Log</div>
+    <h1>Requests</h1>
+  </div>
+  <form class="filters" method="get" action="/requests">
+    <label class="field field-inline">
+      <span>Status</span>
+      <select name="status">
+        <option value="" {% if status.is_empty() %}selected{% endif %}>All</option>
+        <option value="ok" {% if status == "ok" %}selected{% endif %}>Succeeded</option>
+        <option value="error" {% if status == "error" %}selected{% endif %}>Failed</option>
+      </select>
+    </label>
+    <label class="field field-inline">
+      <span>Model</span>
+      <input type="text" name="model" value="{{ model }}" placeholder="requested or answering model">
+    </label>
+    <button class="btn" type="submit">Filter</button>
+  </form>
+</header>
+
+<section class="card">
+  {% if items.is_empty() %}
+    <p class="empty">No requests match.</p>
+  {% else %}
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Time (UTC)</th>
+          <th>Status</th>
+          <th>Requested</th>
+          <th>Answered by</th>
+          <th>Key</th>
+          <th class="num">Attempts</th>
+          <th class="num">Tokens</th>
+          <th class="num">Latency</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+        {% let r = item.request %}
+        <tr>
+          <td class="mono nowrap">{{ r.when() }}</td>
+          <td>
+            {% if r.ok() %}<span class="badge badge-ok">✓ OK</span>{% else %}<span class="badge badge-err">✕ {{ r.http_status }}</span>{% endif %}
+            {% if r.stream %}<span class="badge">stream</span>{% endif %}
+          </td>
+          <td class="mono">{{ r.requested_model }}</td>
+          <td>{{ r.answered_by() }}</td>
+          <td>{% if let Some(k) = r.key_name %}{{ k }}{% else %}<span class="mute">—</span>{% endif %}</td>
+          <td class="num">
+            {% if r.attempts > 1 || !r.ok() %}
+            <details class="attempts">
+              <summary>{{ r.attempts }}</summary>
+              <ol>
+                {% for a in item.attempts %}
+                <li>
+                  {% if a.ok %}<span class="ok">✓</span>{% else %}<span class="crit">✕</span>{% endif %}
+                  <span class="strong">{{ a.provider_name }} / {{ a.model_name }}</span>
+                  <span class="mute">· {{ a.status_s() }} · {{ a.latency_s() }}</span>
+                  {% if let Some(e) = a.error %}<div class="err-text">{{ e }}</div>{% endif %}
+                </li>
+                {% endfor %}
+              </ol>
+            </details>
+            {% else %}{{ r.attempts }}{% endif %}
+          </td>
+          <td class="num">{{ r.tokens_s() }}</td>
+          <td class="num">{{ r.latency_s() }}</td>
+        </tr>
+        {% if let Some(e) = r.error %}
+        <tr class="sub-row"><td colspan="8"><div class="err-text">{{ e }}</div></td></tr>
+        {% endif %}
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <nav class="pager" aria-label="Pages">
+    {% if page_no > 1 %}<a class="btn" href="{{ self.page_link(&(page_no - 1)) }}">← Newer</a>{% endif %}
+    <span class="mute">Page {{ page_no }}</span>
+    {% if has_next %}<a class="btn" href="{{ self.page_link(&(page_no + 1)) }}">Older →</a>{% endif %}
+  </nav>
+  {% endif %}
+</section>
+{% endblock %}

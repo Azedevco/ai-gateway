@@ -1,0 +1,24 @@
+# systemd unit. Adjust User and paths, then:
+#   sudo cp deploy/ai-gateway.service /etc/systemd/system/
+#   sudo systemctl daemon-reload && sudo systemctl enable --now ai-gateway
+[Unit]
+Description=AI Gateway (OpenAI-compatible proxy with fallback)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=gateway
+Group=gateway
+WorkingDirectory=/opt/ai-gateway
+EnvironmentFile=/opt/ai-gateway/.env
+ExecStart=/opt/ai-gateway/ai-gateway
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/opt/ai-gateway/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
